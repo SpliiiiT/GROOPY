@@ -49,7 +49,8 @@ REDUCE_LR_PATIENCE = 2
 # ----------------------------------------------------------------------------
 CONFIDENCE_GATE = 0.80       # emit a token only at/above this confidence
 DEBOUNCE_MS = 500            # at most one prediction per this window
-CONTRACT_VERSION = "v1"
+# NOTE: the contract version now lives in shared/contract.py (CONTRACT_VERSION), the single
+# source of truth for both tracks. Import it from there, not here.
 
 # ----------------------------------------------------------------------------
 # Bake-off scorecard weights (must sum to 1.0). See scorecard.py.

@@ -49,12 +49,36 @@ class Recognizer:
         return self.class_names[idx], float(probs[idx])
 
 
+class WordSigner:
+    """Optional dynamic-word path: MediaPipe Holistic landmarks -> LSTM -> word Token.
+
+    Runs alongside the fingerspelling Recognizer. Feed it each frame; it returns a
+    kind="word" Token when a whole sign is recognised past the confidence gate, else None.
+    """
+
+    def __init__(self, model_path: str) -> None:
+        import tensorflow as tf
+
+        from recognition.src.holistic import landmarks
+        from recognition.src.word_stream import WordStream
+
+        self._landmarks = landmarks
+        self.word_stream = WordStream(tf.keras.models.load_model(model_path))
+
+    def push_frame(self, bgr_frame):
+        return self.word_stream.push(self._landmarks(bgr_frame, static=False))
+
+
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, model_path: str, speak: bool = False) -> None:
+    def __init__(
+        self, model_path: str, speak: bool = False, word_model_path: str | None = None
+    ) -> None:
         super().__init__()
         self.setWindowTitle("GROOPY — Sign → Text (desktop)")
         self.recognizer = Recognizer(model_path)
         self.stream = TokenStream(kind="letter")
+        # Optional whole-word signing (fingerspelling always on; words if a model is given).
+        self.word_signer = WordSigner(word_model_path) if word_model_path else None
         self.speak = speak
         self._tts = self._init_tts() if speak else None
         self.sentence: list[str] = []
@@ -117,6 +141,12 @@ class MainWindow(QtWidgets.QMainWindow):
         if token is not None:
             self._apply_token(token)
 
+        # Optional whole-word path: feed the same frame to the Holistic+LSTM word signer.
+        if self.word_signer is not None:
+            word_token = self.word_signer.push_frame(frame)
+            if word_token is not None:
+                self._apply_token(word_token)
+
         # render frame
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb.shape
@@ -126,7 +156,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ))
 
     def _apply_token(self, token) -> None:
-        # Contract-aware handling of controls
+        # Contract-aware handling of controls, letters, and whole words.
         if token.token == "space":
             self.sentence.append(" ")
         elif token.token == "del":
@@ -134,6 +164,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.sentence.pop()
         elif token.token == "nothing":
             return
+        elif token.kind == "word":
+            # Whole-word signs read as words, so add spacing around them.
+            self.sentence.append((" " if self.sentence else "") + token.token + " ")
+            if self._tts:
+                self._tts.say(token.token)
+                self._tts.runAndWait()
         else:
             self.sentence.append(token.token)
             if self._tts:
@@ -149,12 +185,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GROOPY desktop live demo.")
-    parser.add_argument("--model", required=True, help="path to a .keras model")
+    parser.add_argument("--model", required=True, help="path to the fingerspelling .keras model")
     parser.add_argument("--speak", action="store_true", help="enable text-to-speech")
+    parser.add_argument(
+        "--word-model",
+        default=None,
+        help="optional path to lstm_word.keras to also recognise whole-word signs",
+    )
     args = parser.parse_args()
 
     app = QtWidgets.QApplication(sys.argv)
-    win = MainWindow(args.model, speak=args.speak)
+    win = MainWindow(args.model, speak=args.speak, word_model_path=args.word_model)
     win.show()
     sys.exit(app.exec_())
 

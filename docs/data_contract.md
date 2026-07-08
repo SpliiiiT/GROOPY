@@ -1,10 +1,15 @@
 # Data Contract — Recognition ↔ Synthesis
 
-**Status:** proposed — lock this in Week 3 before parallel work begins.
-**Owners:** Oussama (emits) · Mariem (consumes)
+**Status:** v2 — bidirectional. Single source of truth: `shared/contract.py` (Python) +
+`app/lib/contract/token.dart` (Dart mirror).
+**Owners:** Recognition track (emits) · Synthesis track (consumes) · Sentiment (annotates).
 
-The single object that flows between the two tracks. Recognition (Sign → Text) produces it;
-Synthesis (Text → Sign) consumes the same shape on the way in.
+The single object that flows through the system. Both directions pivot on it:
+
+- **Recognition (Sign → Text/Speech)** *produces* Tokens: a fingerspelled `letter`, a
+  whole-sign `word`, or a `control`.
+- **Synthesis (Text/Speech → Sign)** *consumes* the same shape: text/ASR → glosses → Tokens
+  → sign-video clips (with fingerspelling fallback for out-of-vocabulary words).
 
 ## The Token object
 
@@ -13,7 +18,8 @@ Synthesis (Text → Sign) consumes the same shape on the way in.
   "token": "hello",
   "confidence": 0.94,
   "timestamp": 1730812345678,
-  "kind": "word"
+  "kind": "word",
+  "sentiment": { "label": "positive", "score": 0.88 }
 }
 ```
 
@@ -23,6 +29,7 @@ Synthesis (Text → Sign) consumes the same shape on the way in.
 | `confidence` | float | `0.0`–`1.0`. Only emitted when ≥ the confidence gate (default `0.80`). |
 | `timestamp` | int | Unix epoch **milliseconds** at time of prediction. |
 | `kind` | string | `"letter"`, `"word"`, or `"control"` (`space` / `del` / `nothing`). Lets Synthesis pick fingerspelling vs a whole-sign video. |
+| `sentiment` | object \| null | **(v2, optional)** `{ "label": "positive"\|"neutral"\|"negative", "score": 0.0–1.0 }`. Produced by the sentiment module on the underlying text. Additive and backward compatible — omit or `null` when not analysed. **What it drives (a label, signing emphasis, or expression) is not yet decided**, so consumers should treat it as metadata for now. |
 
 ## Shared vocabulary
 
@@ -40,5 +47,6 @@ Synthesis (Text → Sign) consumes the same shape on the way in.
 
 ## Versioning
 
-Bump `CONTRACT_VERSION` in both `recognition/src/config.py` and the Flutter
-`app/lib/contract/token.dart` together. Current: **v1**.
+Bump the version in lockstep across `shared/contract.py` (`CONTRACT_VERSION`) and the
+Flutter `app/lib/contract/token.dart` (`kContractVersion`). Current: **v2** (added optional
+`sentiment`; additive/backward-compatible with v1).
