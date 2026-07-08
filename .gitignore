@@ -1,0 +1,31 @@
+# Data — never commit datasets
+data/asl_alphabet/
+data/asl_alphabet_train/
+data/asl_alphabet_test/
+data/wlasl/
+data/tunsl/
+*.zip
+
+# Trained artefacts (keep the folder, ignore the weights)
+recognition/models/*.keras
+recognition/models/*.h5
+recognition/models/*.tflite
+recognition/models/*_tfjs/
+!recognition/models/.gitkeep
+
+# Results are committed selectively; ignore large caches
+recognition/results/cache/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Kaggle credentials
+kaggle.json
+
+# OS
+.DS_Store
+Thumbs.db

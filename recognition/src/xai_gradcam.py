@@ -1,0 +1,113 @@
+"""Grad-CAM explainability (CRISP-DM: Evaluation — trust & bias check).
+
+Produces heatmaps over sample images to verify the model attends to the HAND, not the
+background or skin tone. Also drives the manual 'robustness' score in the scorecard.
+
+Usage:
+  python -m recognition.src.xai_gradcam --model recognition/models/cnn_scratch.keras --n 12
+"""
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+import numpy as np
+import tensorflow as tf
+
+from .config import IMG_SIZE, RESULTS_DIR
+from .data import make_datasets
+
+
+def _last_conv_layer_name(model: tf.keras.Model) -> str:
+    """Find the last 4D (conv) output layer, descending into a nested base model."""
+    def _is_4d(layer) -> bool:
+        try:
+            return len(layer.output_shape) == 4
+        except (AttributeError, RuntimeError):
+            return False
+
+    def search(m):
+        for layer in reversed(m.layers):
+            if isinstance(layer, tf.keras.Model):
+                found = search(layer)
+                if found:
+                    return found
+            if _is_4d(layer):
+                return layer.name
+        return None
+
+    name = search(model)
+    if name is None:
+        raise RuntimeError("Could not locate a conv layer for Grad-CAM.")
+    return name
+
+
+def make_gradcam_heatmap(img_array, model, last_conv_name) -> np.ndarray:
+    grad_model = tf.keras.models.Model(
+        model.inputs,
+        [model.get_layer(last_conv_name).output, model.output],
+    )
+    with tf.GradientTape() as tape:
+        conv_out, preds = grad_model(img_array)
+        class_idx = tf.argmax(preds[0])
+        class_channel = preds[:, class_idx]
+
+    grads = tape.gradient(class_channel, conv_out)
+    pooled = tf.reduce_mean(grads, axis=(0, 1, 2))
+    conv_out = conv_out[0]
+    heatmap = conv_out @ pooled[..., tf.newaxis]
+    heatmap = tf.squeeze(heatmap)
+    heatmap = tf.maximum(heatmap, 0) / (tf.reduce_max(heatmap) + 1e-8)
+    return heatmap.numpy()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Grad-CAM heatmap panel.")
+    parser.add_argument("--model", required=True)
+    parser.add_argument("--n", type=int, default=12)
+    args = parser.parse_args()
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    model = tf.keras.models.load_model(args.model)
+    last_conv = _last_conv_layer_name(model)
+    print("Grad-CAM target layer:", last_conv)
+
+    _, _, test_ds, class_names = make_datasets()
+    images, labels = next(iter(test_ds))
+    images = images[: args.n]
+    labels = labels[: args.n]
+
+    cols = 4
+    rows = (args.n + cols - 1) // cols
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * 3, rows * 3))
+    axes = np.array(axes).reshape(-1)
+
+    for i in range(args.n):
+        img = images[i].numpy()
+        arr = np.expand_dims(img, 0)
+        heat = make_gradcam_heatmap(arr, model, last_conv)
+        heat = tf.image.resize(heat[..., None], (IMG_SIZE, IMG_SIZE)).numpy().squeeze()
+        pred = class_names[int(np.argmax(model.predict(arr, verbose=0)[0]))]
+        axes[i].imshow(img)
+        axes[i].imshow(heat, cmap="jet", alpha=0.45)
+        axes[i].set_title(f"true={class_names[int(labels[i])]}  pred={pred}", fontsize=8)
+        axes[i].axis("off")
+    for j in range(args.n, len(axes)):
+        axes[j].axis("off")
+
+    out = RESULTS_DIR / f"gradcam_{Path(args.model).stem}.png"
+    fig.tight_layout()
+    fig.savefig(out, dpi=120)
+    print("Saved", out)
+    print(
+        "Review: heatmaps should concentrate on the hand. If they light up the "
+        "background/arm, lower this model's 'robustness' score in the bake-off."
+    )
+
+
+if __name__ == "__main__":
+    main()

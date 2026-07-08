@@ -1,0 +1,6 @@
+# Desktop app only (in addition to the repo's requirements.txt)
+PyQt5>=5.15
+opencv-python>=4.8
+mediapipe==0.10.9
+tensorflow==2.15.0
+pyttsx3>=2.90        # optional: offline text-to-speech
