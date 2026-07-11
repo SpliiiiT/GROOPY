@@ -56,6 +56,36 @@ def test_sign_plan_fallback():
     assert spell.letters == list("OUSSAMA")
 
 
+def test_landmark_normalization_invariance():
+    import numpy as np
+
+    from recognition.src.holistic import normalize_sequence
+    from shared.config import FRAME_FEATURES, SEQ_LEN
+
+    seq = np.zeros((SEQ_LEN, FRAME_FEATURES), np.float32)
+    seq[:, 44], seq[:, 45] = 0.4, 0.5     # left shoulder x,y
+    seq[:, 48], seq[:, 49] = 0.6, 0.5     # right shoulder x,y
+    seq[:, 132], seq[:, 133] = 0.55, 0.7  # a left-hand landmark
+    base = normalize_sequence(seq)
+
+    # translation invariance
+    shifted = seq.copy()
+    for i in (44, 48, 132):
+        shifted[:, i] += 0.1
+    for i in (45, 49, 133):
+        shifted[:, i] += 0.1
+    assert np.allclose(normalize_sequence(shifted), base, atol=1e-5)
+
+    # scale invariance + shoulder midpoint -> origin, width -> 1
+    scaled = seq.copy()
+    for i in (44, 48, 132, 45, 49, 133):
+        scaled[:, i] = (seq[:, i] - 0.5) * 2 + 0.5
+    assert np.allclose(normalize_sequence(scaled), base, atol=1e-5)
+    assert abs(base[0, 44] + 0.5) < 1e-5 and abs(base[0, 48] - 0.5) < 1e-5
+    # absent landmarks stay zero
+    assert base[0, 200] == 0.0
+
+
 def test_sentiment_and_seam():
     from sentiment import analyze
 

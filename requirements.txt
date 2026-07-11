@@ -3,9 +3,11 @@ tensorflow==2.15.0        # use tensorflow (GPU build) on Colab / local CUDA
 numpy>=1.24,<2.0
 pandas>=2.0
 
-# Landmark extraction + vision
+# Landmark extraction + vision.
+# Use the CONTRIB build (mediapipe depends on it) and cap below 5.x — opencv 5 requires
+# numpy>=2, which conflicts with tensorflow 2.15 (numpy<2). Install only ONE opencv package.
 mediapipe==0.10.9
-opencv-python>=4.8
+opencv-contrib-python>=4.8,<5
 
 # Evaluation, plotting, XAI
 scikit-learn>=1.3

@@ -49,6 +49,20 @@ NUM_WORDS = len(GLOSSES)
 GLOSS_TO_INDEX: dict[str, int] = {g: i for i, g in enumerate(GLOSSES)}
 INDEX_TO_GLOSS: dict[int, str] = {i: g for g, i in GLOSS_TO_INDEX.items()}
 
+# Reconcile our curated glosses -> the gloss string(s) WLASL actually uses (its labels don't
+# always match ours, e.g. "thank you" vs "thanks"). First existing match wins. Shared by the
+# WLASL downloader and the clip/landmark preparer. Extend as you inspect the WLASL classes.
+WLASL_ALIASES: dict[str, list[str]] = {
+    "thanks": ["thank you", "thank"],
+    "hello": ["hi"],
+    "me": ["i", "myself"],
+}
+
+
+def wlasl_gloss_candidates(gloss: str) -> list[str]:
+    """Our gloss + its WLASL aliases, in priority order (our exact name first)."""
+    return [gloss] + [a for a in WLASL_ALIASES.get(gloss, []) if a != gloss]
+
 
 def has_clip(gloss: str) -> bool:
     """True if this gloss has a word-sign clip (else the caller should fingerspell it)."""

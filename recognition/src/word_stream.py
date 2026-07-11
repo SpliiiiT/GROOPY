@@ -19,6 +19,7 @@ from shared.contract import KIND_WORD, Token
 from shared.vocabulary import INDEX_TO_GLOSS
 
 from .config import CONFIDENCE_GATE
+from .holistic import normalize_sequence
 from .token_stream import TokenStream
 
 
@@ -47,14 +48,19 @@ class WordStream:
         if not self.ready:
             return None
 
-        seq = np.expand_dims(np.stack(self._buf), 0)          # (1, seq_len, F)
-        probs = self.model.predict(seq, verbose=0)[0]
+        # Same normalization as training (sequence_data) — no train/serve skew.
+        seq = normalize_sequence(np.stack(self._buf))
+        probs = self.model.predict(np.expand_dims(seq, 0), verbose=0)[0]
         idx = int(np.argmax(probs))
         gloss = INDEX_TO_GLOSS[idx]
         return self._stream.update(gloss, float(probs[idx]))
 
     def predict_sequence(self, seq: np.ndarray) -> tuple[str, float]:
-        """One-shot classify a full (seq_len, F) sequence -> (gloss, confidence). For tests/offline."""
+        """One-shot classify a full (seq_len, F) sequence -> (gloss, confidence). For tests/offline.
+
+        Pass a RAW landmark sequence; normalization is applied here to match training.
+        """
+        seq = normalize_sequence(seq)
         probs = self.model.predict(np.expand_dims(seq, 0), verbose=0)[0]
         idx = int(np.argmax(probs))
         return INDEX_TO_GLOSS[idx], float(probs[idx])

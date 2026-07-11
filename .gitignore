@@ -4,6 +4,7 @@ data/asl_alphabet_train/
 data/asl_alphabet_test/
 data/wlasl/
 data/wlasl_landmarks/
+data/wlasl_request/          # locally-generated missing.txt to upload to the WLASL form
 data/tunsl/
 *.zip
 

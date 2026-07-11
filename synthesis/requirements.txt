@@ -2,9 +2,10 @@
 # Install into the same env you use for Recognition.
 
 # Clip playback + stub clip generation + landmark capture.
-# Cap below 5.x: opencv-python 5+ requires numpy>=2, which conflicts with tensorflow 2.15
-# (numpy<2). Keep 4.x so both tracks share one env.
-opencv-python>=4.8,<5
+# Use the CONTRIB build to match the recognition env (mediapipe depends on it), and cap
+# below 5.x: opencv 5+ requires numpy>=2, which conflicts with tensorflow 2.15 (numpy<2).
+# Install only ONE opencv package across the whole project.
+opencv-contrib-python>=4.8,<5
 numpy>=1.24,<2.0
 
 # Speech-to-text (ASR) — choose ONE backend; both are optional and lazily imported.

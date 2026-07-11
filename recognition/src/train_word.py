@@ -50,11 +50,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train the dynamic word-sign LSTM.")
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--augment", type=int, default=8,
+                        help="augmented copies per train sample (0 = off). Vital for tiny data.")
     args = parser.parse_args()
 
     _set_seeds()
-    (X_tr, y_tr), (X_val, y_val), (X_te, y_te), class_names = load_dataset()
-    print(f"train={len(X_tr)} val={len(X_val)} test={len(X_te)} classes={len(class_names)}")
+    (X_tr, y_tr), (X_val, y_val), (X_te, y_te), class_names = load_dataset(
+        augment_factor=args.augment
+    )
+    print(f"train={len(X_tr)} (augment x{args.augment}) val={len(X_val)} test={len(X_te)} "
+          f"classes={len(class_names)}")
 
     model = build_lstm_word(NUM_WORDS, SEQ_LEN, FRAME_FEATURES)
     model.compile(
