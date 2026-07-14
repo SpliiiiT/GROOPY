@@ -64,6 +64,34 @@ def wlasl_gloss_candidates(gloss: str) -> list[str]:
     return [gloss] + [a for a in WLASL_ALIASES.get(gloss, []) if a != gloss]
 
 
+# Reconcile our curated glosses -> the UPPERCASE label(s) ASL Citizen uses (its "Gloss"
+# column). ASL Citizen suffixes sign variants (WANT1/WANT2) and joins words (THANKYOU); all
+# listed variants map into the same class (a signer may use either). Verified against the
+# real split CSVs: all 20 of our words are covered (~30 videos each).
+ASL_CITIZEN_GLOSSES: dict[str, list[str]] = {
+    "hello": ["HELLO"],
+    "thanks": ["THANKYOU"],
+    "please": ["PLEASE"],
+    "yes": ["YES"],
+    "no": ["NO"],
+    "sorry": ["SORRY"],
+    "help": ["HELP"],
+    "want": ["WANT1", "WANT2"],
+    "need": ["NEED"],
+    "name": ["NAME"],
+    "you": ["YOU"],
+    "me": ["ME"],
+    "good": ["GOOD"],
+    "bad": ["BAD"],
+    "happy": ["HAPPY"],
+    "sad": ["SAD"],
+    "eat": ["EAT1", "EAT2"],
+    "drink": ["DRINK1", "DRINK2"],
+    "friend": ["FRIEND"],
+    "love": ["LOVE"],
+}
+
+
 def has_clip(gloss: str) -> bool:
     """True if this gloss has a word-sign clip (else the caller should fingerspell it)."""
     return gloss.lower() in CLIP_MAP
