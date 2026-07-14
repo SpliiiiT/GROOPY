@@ -143,10 +143,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train bake-off candidates.")
     parser.add_argument("--model", default="all", help="model name or 'all'")
     parser.add_argument("--epochs", type=int, default=EPOCHS)
+    parser.add_argument("--data-dir", default=None,
+                        help="override the training image root (e.g. a subset for a quick run)")
     args = parser.parse_args()
 
     names = list(model_zoo.REGISTRY) if args.model == "all" else [args.model]
-    train_ds, val_ds, _test_ds, class_names = make_datasets()
+    ds_kwargs = {"data_dir": args.data_dir} if args.data_dir else {}
+    train_ds, val_ds, _test_ds, class_names = make_datasets(**ds_kwargs)
     print("Classes:", class_names)
 
     summary = [train_one(n, args.epochs, train_ds, val_ds) for n in names]

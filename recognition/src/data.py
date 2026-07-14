@@ -51,15 +51,19 @@ def make_datasets(
     batch_size: int = BATCH_SIZE,
     val_split: float = VAL_SPLIT,
     test_split: float = 0.10,
+    data_dir=ASL_TRAIN_DIR,
 ):
     """Return (train_ds, val_ds, test_ds, class_names).
 
     Split logic: image_dataset_from_directory gives us train/val by fraction with a
     fixed seed. We then peel a test set off the *validation* stream so test images are
     never seen in training. All three are deterministic given SEED.
+
+    data_dir overrides the class-subfolder root (default ASL_TRAIN_DIR) — handy for a
+    quick subset proof-run locally, or a different path on Colab.
     """
     train_ds = tf.keras.utils.image_dataset_from_directory(
-        ASL_TRAIN_DIR,
+        data_dir,
         validation_split=val_split + test_split,
         subset="training",
         seed=SEED,
@@ -68,7 +72,7 @@ def make_datasets(
         label_mode="int",
     )
     holdout_ds = tf.keras.utils.image_dataset_from_directory(
-        ASL_TRAIN_DIR,
+        data_dir,
         validation_split=val_split + test_split,
         subset="validation",
         seed=SEED,

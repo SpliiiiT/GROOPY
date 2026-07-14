@@ -42,3 +42,4 @@ kaggle.json
 # OS
 .DS_Store
 Thumbs.db
+data/asl_alphabet_subset/

@@ -11,14 +11,12 @@ Usage:
 from __future__ import annotations
 
 import os
-import subprocess
+import shutil
 import sys
-import zipfile
 from pathlib import Path
 
 DATASET = "grassknoted/asl-alphabet"
 DATA_DIR = Path(__file__).resolve().parent
-ZIP_PATH = DATA_DIR / "asl-alphabet.zip"
 
 
 def ensure_kaggle_credentials() -> None:
@@ -40,23 +38,26 @@ def ensure_kaggle_credentials() -> None:
 
 def main() -> None:
     ensure_kaggle_credentials()
-    print(f"Downloading {DATASET} ...")
-    subprocess.run(
-        ["kaggle", "datasets", "download", "-d", DATASET, "-p", str(DATA_DIR)],
-        check=True,
-    )
-    print("Unzipping ...")
-    with zipfile.ZipFile(ZIP_PATH) as zf:
-        zf.extractall(DATA_DIR)
+    print(f"Downloading {DATASET} (~1GB) ...")
+    # Kaggle Python API (works regardless of PATH / venv activation, unlike the CLI).
+    from kaggle.api.kaggle_api_extended import KaggleApi
 
-    # The archive contains asl_alphabet_train/asl_alphabet_train/<CLASS>/...
-    # Flatten one level if needed so config paths line up.
-    nested = DATA_DIR / "asl_alphabet_train" / "asl_alphabet_train"
+    api = KaggleApi()
+    api.authenticate()
+    api.dataset_download_files(DATASET, path=str(DATA_DIR), unzip=True, quiet=False)
+
+    # The archive nests as asl_alphabet_train/asl_alphabet_train/<CLASS>/... Isolate the
+    # real class dirs and drop anything else already at the flat path (e.g. stub data),
+    # so the flatten is robust and idempotent.
     flat = DATA_DIR / "asl_alphabet_train"
-    if nested.exists() and nested.is_dir():
-        for child in nested.iterdir():
-            child.rename(flat / child.name)
-        nested.rmdir()
+    nested = flat / "asl_alphabet_train"
+    if nested.is_dir():
+        real = DATA_DIR / "asl_alphabet_train_real"
+        if real.exists():
+            shutil.rmtree(real)
+        nested.rename(real)          # move real class dirs out
+        shutil.rmtree(flat)          # remove the (now stub-only) flat dir
+        real.rename(flat)            # put real data in place
 
     print("Done. Train dir:", flat)
     print("Remember: the data/ folder is gitignored — never commit the images.")
