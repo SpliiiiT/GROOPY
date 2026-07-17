@@ -16,8 +16,10 @@ as `aslc_<i>.npy`, so they COMBINE with any WLASL clips already there (distinct 
 collision). ASL Citizen clips are already trimmed to the isolated sign (whole video used).
 
 Usage:
-  python data/prepare_asl_citizen.py --asl-dir data/asl_citizen/ASL_Citizen
-  python data/prepare_asl_citizen.py --asl-dir <path> --max-per-gloss 40 --fresh
+  # From the zip directly — extracts ONLY our vocab's ~700 videos on the fly (no 46GB unpack):
+  python data/prepare_asl_citizen.py --zip data/ASL_Citizen.zip --max-per-gloss 40 --fresh
+  # Or from an already-unzipped dataset:
+  python data/prepare_asl_citizen.py --asl-dir data/asl_citizen/ASL_Citizen --fresh
   python -m recognition.src.train_word --epochs 60 --augment 8      # then train
 """
 from __future__ import annotations
@@ -35,51 +37,83 @@ from shared.config import LANDMARKS_DIR, SEQ_LEN  # noqa: E402
 from shared.vocabulary import ASL_CITIZEN_GLOSSES, GLOSSES  # noqa: E402
 
 
-def _read_splits(asl_dir: Path) -> list[tuple[str, str]]:
-    """Return (video_filename, GLOSS) across all split CSVs. Falls back to scanning videos/."""
+def _splits_from_csv_text(texts: list[str]) -> list[tuple[str, str]]:
     pairs: list[tuple[str, str]] = []
+    for text in texts:
+        for row in csv.DictReader(text.splitlines()):
+            pairs.append((row["Video file"].strip(), row["Gloss"].strip().upper()))
+    return pairs
+
+
+def _read_splits_dir(asl_dir: Path) -> list[tuple[str, str]]:
+    """(video_filename, GLOSS) from splits/*.csv, or from filenames if no CSVs."""
     splits = asl_dir / "splits"
     csvs = list(splits.glob("*.csv")) if splits.is_dir() else []
     if csvs:
-        for c in csvs:
-            with open(c, newline="", encoding="utf-8") as fh:
-                for row in csv.DictReader(fh):
-                    pairs.append((row["Video file"].strip(), row["Gloss"].strip().upper()))
-    else:
-        # No CSVs: derive gloss from filename "<id>-<GLOSS>.mp4"
-        for v in (asl_dir / "videos").glob("*.mp4"):
-            gloss = v.stem.split("-", 1)[-1].strip().upper()
-            pairs.append((v.name, gloss))
-    return pairs
+        return _splits_from_csv_text([c.read_text(encoding="utf-8") for c in csvs])
+    return [(v.name, v.stem.split("-", 1)[-1].strip().upper())
+            for v in (asl_dir / "videos").glob("*.mp4")]
+
+
+def _read_splits_zip(zf) -> list[tuple[str, str]]:
+    texts = [zf.read(n).decode("utf-8") for n in zf.namelist() if n.lower().endswith(".csv")]
+    return _splits_from_csv_text(texts)
+
+
+def _group_by_word(pairs: list[tuple[str, str]]) -> dict[str, list[str]]:
+    label_to_word = {lab: word for word, labs in ASL_CITIZEN_GLOSSES.items() for lab in labs}
+    by_word: dict[str, list[str]] = {g: [] for g in GLOSSES}
+    for fname, gloss in pairs:
+        word = label_to_word.get(gloss)
+        if word:
+            by_word[word].append(fname)
+    return by_word
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Extract ASL Citizen landmarks for our vocab.")
-    parser.add_argument("--asl-dir", required=True,
-                        help="unzipped ASL_Citizen dir (contains splits/ and videos/)")
+    src = parser.add_mutually_exclusive_group(required=True)
+    src.add_argument("--zip", help="ASL_Citizen.zip — extract only our vocab's videos on the fly")
+    src.add_argument("--asl-dir", help="already-unzipped ASL_Citizen dir (splits/ + videos/)")
     parser.add_argument("--max-per-gloss", type=int, default=40)
     parser.add_argument("--seq-len", type=int, default=SEQ_LEN)
     parser.add_argument("--fresh", action="store_true",
                         help="remove existing aslc_*.npy for our glosses first")
     args = parser.parse_args()
 
-    asl_dir = Path(args.asl_dir)
-    videos = asl_dir / "videos"
-    if not videos.is_dir():
-        sys.exit(f"{videos} not found. Point --asl-dir at the unzipped ASL_Citizen folder.")
-
     from recognition.src.holistic import video_to_sequence  # needs mediapipe
 
-    # ASL Citizen GLOSS (uppercase) -> our gloss
-    label_to_word = {lab: word for word, labs in ASL_CITIZEN_GLOSSES.items() for lab in labs}
-    pairs = _read_splits(asl_dir)
+    import tempfile
+    import zipfile
 
-    # group our-vocab videos by our gloss
-    by_word: dict[str, list[str]] = {g: [] for g in GLOSSES}
-    for fname, gloss in pairs:
-        word = label_to_word.get(gloss)
-        if word:
-            by_word[word].append(fname)
+    zf = None
+    zip_members = None
+    if args.zip:
+        zf = zipfile.ZipFile(args.zip)
+        # member lookup by basename, e.g. "15890366051589533-APPLE.mp4"
+        zip_members = {Path(n).name: n for n in zf.namelist() if n.lower().endswith(".mp4")}
+        by_word = _group_by_word(_read_splits_zip(zf))
+    else:
+        asl_dir = Path(args.asl_dir)
+        if not (asl_dir / "videos").is_dir():
+            sys.exit(f"{asl_dir}/videos not found. Point --asl-dir at the unzipped ASL_Citizen.")
+        by_word = _group_by_word(_read_splits_dir(asl_dir))
+
+    def _seq_for(fname: str):
+        """Landmark sequence for a video filename, from the zip (temp) or the unzipped dir."""
+        if zf is not None:
+            member = zip_members.get(fname)
+            if member is None:
+                return None
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+                tmp.write(zf.read(member))
+                tmp_path = tmp.name
+            try:
+                return video_to_sequence(tmp_path, args.seq_len)
+            finally:
+                Path(tmp_path).unlink(missing_ok=True)
+        vpath = Path(args.asl_dir) / "videos" / fname
+        return video_to_sequence(str(vpath), args.seq_len) if vpath.is_file() else None
 
     n_seqs = 0
     per_word = {}
@@ -91,10 +125,7 @@ def main() -> None:
                 old.unlink()
         count = 0
         for fname in by_word[word][: args.max_per_gloss]:
-            vpath = videos / fname
-            if not vpath.is_file():
-                continue
-            seq = video_to_sequence(str(vpath), args.seq_len)   # whole clip
+            seq = _seq_for(fname)
             if seq is not None:
                 np.save(out_dir / f"aslc_{count:03d}.npy", seq)
                 count += 1
