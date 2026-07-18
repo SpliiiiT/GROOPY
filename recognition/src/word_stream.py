@@ -32,6 +32,9 @@ class WordStream:
         self.gate = gate
         self._buf: deque = deque(maxlen=seq_len)
         self._stream = TokenStream(gate=gate, kind=KIND_WORD)
+        # Latest raw prediction (for live UI feedback, even below the emit gate).
+        self.last_gloss: Optional[str] = None
+        self.last_conf: float = 0.0
 
     def reset(self) -> None:
         self._buf.clear()
@@ -49,10 +52,20 @@ class WordStream:
             return None
 
         # Same normalization as training (sequence_data) — no train/serve skew.
-        seq = normalize_sequence(np.stack(self._buf))
+        stacked = np.stack(self._buf)
+        # The LSTM has no "not signing" class, so it always argmaxes SOME word. Suppress the
+        # guess when the window has essentially no HAND landmarks (indices 132: = LH+RH) —
+        # i.e. the person isn't signing — so idle noise doesn't surface a spurious word.
+        hand_activity = float(np.mean(np.any(stacked[:, FRAME_FEATURES - 126:] != 0.0, axis=1)))
+        if hand_activity < 0.3:
+            self.last_gloss, self.last_conf = None, 0.0
+            return None
+
+        seq = normalize_sequence(stacked)
         probs = self.model.predict(np.expand_dims(seq, 0), verbose=0)[0]
         idx = int(np.argmax(probs))
         gloss = INDEX_TO_GLOSS[idx]
+        self.last_gloss, self.last_conf = gloss, float(probs[idx])
         return self._stream.update(gloss, float(probs[idx]))
 
     def predict_sequence(self, seq: np.ndarray) -> tuple[str, float]:

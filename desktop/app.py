@@ -71,13 +71,15 @@ class WordSigner:
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(
-        self, model_path: str, speak: bool = False, word_model_path: str | None = None
+        self, model_path: str | None = None, speak: bool = False,
+        word_model_path: str | None = None,
     ) -> None:
         super().__init__()
         self.setWindowTitle("GROOPY — Sign → Text (desktop)")
-        self.recognizer = Recognizer(model_path)
+        # Fingerspelling CNN is optional: run word-only if no --model is given.
+        self.recognizer = Recognizer(model_path) if model_path else None
         self.stream = TokenStream(kind="letter")
-        # Optional whole-word signing (fingerspelling always on; words if a model is given).
+        # Optional whole-word signing (Holistic + LSTM).
         self.word_signer = WordSigner(word_model_path) if word_model_path else None
         self.speak = speak
         self._tts = self._init_tts() if speak else None
@@ -92,24 +94,47 @@ class MainWindow(QtWidgets.QMainWindow):
         self.text_label.setStyleSheet("font-size: 20px; color: #333;")
         self.text_label.setWordWrap(True)
 
+        capture_btn = QtWidgets.QPushButton("Capture word  (Space)")
+        capture_btn.clicked.connect(self._capture_word)
         clear_btn = QtWidgets.QPushButton("Clear")
         clear_btn.clicked.connect(self._clear)
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addWidget(capture_btn)
+        btn_row.addWidget(clear_btn)
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.video_label)
         layout.addWidget(self.pred_label)
         layout.addWidget(QtWidgets.QLabel("Sentence:"))
         layout.addWidget(self.text_label)
-        layout.addWidget(clear_btn)
+        layout.addLayout(btn_row)
         container = QtWidgets.QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
 
         # Camera loop
-        self.cap = cv2.VideoCapture(0)
+        self.cap = self._open_camera()
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self._tick)
         self.timer.start(30)  # ~33 fps capture; model runs each tick
+
+    def _open_camera(self):
+        """Open a working webcam. On Windows the default MSMF backend often returns no
+        frames — DirectShow (CAP_DSHOW) is far more reliable — so try it first, and try a
+        couple of device indices."""
+        for idx in (0, 1, 2):
+            for backend in (getattr(cv2, "CAP_DSHOW", 0), cv2.CAP_ANY):
+                cap = cv2.VideoCapture(idx, backend)
+                if cap.isOpened():
+                    ok, _ = cap.read()
+                    if ok:
+                        print(f"camera opened (index {idx})")
+                        return cap
+                cap.release()
+        print("WARNING: no working webcam found — check Windows camera privacy settings "
+              "(Settings > Privacy & security > Camera > let desktop apps access) and that "
+              "no other app is using the camera.")
+        return cv2.VideoCapture(0)
 
     def _init_tts(self):
         try:
@@ -124,9 +149,34 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sentence = []
         self.text_label.setText("")
 
+    def _capture_word(self) -> None:
+        """Commit the current live word guess to the sentence, then reset the buffer."""
+        if self.word_signer is None:
+            return
+        ws = self.word_signer.word_stream
+        if not ws.ready or ws.last_gloss is None:
+            self.pred_label.setText("… hold a sign steady ~1s, then Space")
+            return
+        import time as _t
+
+        from shared.contract import KIND_WORD, Token
+
+        self._apply_token(Token(
+            token=ws.last_gloss, confidence=round(ws.last_conf, 3),
+            timestamp=int(_t.time() * 1000), kind=KIND_WORD,
+        ))
+        ws.reset()  # fresh window for the next sign
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == QtCore.Qt.Key_Space:
+            self._capture_word()
+        else:
+            super().keyPressEvent(event)
+
     def _tick(self) -> None:
         ok, frame = self.cap.read()
         if not ok:
+            self.pred_label.setText("no camera feed — check camera privacy / other apps")
             return
         frame = cv2.flip(frame, 1)  # mirror for natural signing
 
@@ -134,18 +184,28 @@ class MainWindow(QtWidgets.QMainWindow):
         # duration each tick. Fine for lightweight models; a heavy one (e.g. ResNet50)
         # will make the GUI stutter. Proper fix: run Recognizer.predict on a QThread
         # worker and deliver (label, conf) back via a signal.
-        label, conf = self.recognizer.predict(frame)
-        self.pred_label.setText(f"{label}   ({conf:.0%})")
+        if self.recognizer is not None:
+            label, conf = self.recognizer.predict(frame)
+            self.pred_label.setText(f"{label}   ({conf:.0%})")
+            token = self.stream.update(label, conf)
+            if token is not None:
+                self._apply_token(token)
 
-        token = self.stream.update(label, conf)
-        if token is not None:
-            self._apply_token(token)
-
-        # Optional whole-word path: feed the same frame to the Holistic+LSTM word signer.
+        # Optional whole-word path: feed the same frame to the word signer for a LIVE guess.
+        # Words are committed only on Capture (Space) — a sliding window would otherwise spew
+        # a word every debounce tick from transitional frames.
         if self.word_signer is not None:
-            word_token = self.word_signer.push_frame(frame)
-            if word_token is not None:
-                self._apply_token(word_token)
+            self.word_signer.push_frame(frame)
+            ws = self.word_signer.word_stream
+            if ws.ready and ws.last_gloss is not None:
+                self.pred_label.setText(
+                    f"{ws.last_gloss}   ({ws.last_conf:.0%})   — Space to add"
+                )
+            elif self.recognizer is None:
+                self.pred_label.setText(
+                    "… buffering (hold a sign ~1s)" if not ws.ready
+                    else "no hands detected — sign a word"
+                )
 
         # render frame
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -185,14 +245,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GROOPY desktop live demo.")
-    parser.add_argument("--model", required=True, help="path to the fingerspelling .keras model")
+    parser.add_argument("--model", default=None, help="fingerspelling .keras model (optional)")
     parser.add_argument("--speak", action="store_true", help="enable text-to-speech")
     parser.add_argument(
         "--word-model",
         default=None,
-        help="optional path to lstm_word.keras to also recognise whole-word signs",
+        help="lstm_word.keras to recognise whole-word signs (optional)",
     )
     args = parser.parse_args()
+    if not args.model and not args.word_model:
+        parser.error("give at least one of --model (fingerspelling) or --word-model (words).")
 
     app = QtWidgets.QApplication(sys.argv)
     win = MainWindow(args.model, speak=args.speak, word_model_path=args.word_model)

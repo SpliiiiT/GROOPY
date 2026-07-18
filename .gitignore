@@ -4,9 +4,12 @@ data/asl_alphabet_train/
 data/asl_alphabet_test/
 data/wlasl/
 data/wlasl_landmarks/
-data/wlasl_request/          # locally-generated missing.txt to upload to the WLASL form
-data/asl_citizen/            # Microsoft ASL Citizen dataset (46GB) — never commit
-data/asl_citizen_meta/       # ASL Citizen split CSVs (dataset metadata) — don't redistribute
+# locally-generated missing.txt to upload to the WLASL form
+data/wlasl_request/
+# Microsoft ASL Citizen dataset (46GB) — never commit
+data/asl_citizen/
+# ASL Citizen split CSVs (dataset metadata) — don't redistribute
+data/asl_citizen_meta/
 data/tunsl/
 *.zip
 
