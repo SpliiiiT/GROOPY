@@ -10,6 +10,10 @@ numpy>=1.24,<2.0
 
 # Speech-to-text (ASR) — choose ONE backend; both are optional and lazily imported.
 faster-whisper>=1.0        # offline, recommended (downloads a model on first use)
+# faster-whisper pulls a newer protobuf that breaks mediapipe/TF 2.15 — pin it back.
+# Transcription still works (via ctranslate2); only faster-whisper's optional onnx VAD needs
+# protobuf>=4, which we don't use.
+protobuf>=3.20.3,<4
 # SpeechRecognition>=3.10  # fallback (online Google API by default); needs PyAudio for mic
 
 # Desktop synthesis demo reuses PyQt5 from the recognition/desktop requirements.

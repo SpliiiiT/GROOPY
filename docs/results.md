@@ -125,9 +125,21 @@ Grad-CAM heatmaps verify the fingerspelling models attend to the **hand**, not t
 - **cnn_scratch** — good focus on clean signs (B, A, K) but **scatters to the background** on
   harder cases, which is *why* it misfired on them → moderate robustness.
 
-Plugging estimated robustness scores (EfficientNet 0.85, cnn_scratch 0.65) back into the
-scorecard **widens EfficientNet's lead** (0.629 → 0.681) without changing the ranking —
-robustness *reinforces* the accuracy winner rather than flipping it.
+Plugging the robustness scores from the heatmaps back into the scorecard (EfficientNet 0.85
+and cnn_scratch 0.65 are read directly from the heatmaps; resnet50 0.80 and mobilenetv2 0.70
+are estimated) re-scores as:
+
+| Rank | Model | Accuracy | Robustness | Total (was) |
+|---|---|---|---|---|
+| 1 | efficientnetb0 | 0.9994 | 0.85 | **0.681** (0.629) |
+| 2 | resnet50 | 1.0000 | 0.80 | 0.611 (0.566) |
+| 3 | cnn_scratch | 0.9932 | 0.65 | 0.498 (0.475) |
+| 4 | mobilenetv2 | 0.9932 | 0.70 | 0.399 (0.369) |
+
+The **ranking is unchanged** — robustness *reinforces* the accuracy winner and cannot flip it
+(the score gaps exceed what the 15 % robustness weight can bridge). To favour the fast,
+deployable model instead, one would re-weight the scorecard toward latency and size, not adjust
+robustness — the weights, not the robustness scores, encode the deployment priority.
 
 **Closing the CRISP-DM loop:** both models confuse the *exact* hard pairs predicted during EDA
 — **M/A, M/E, Q/G**. Our Data-Understanding hypothesis was confirmed by the model errors.
