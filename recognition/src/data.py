@@ -52,6 +52,7 @@ def make_datasets(
     val_split: float = VAL_SPLIT,
     test_split: float = 0.10,
     data_dir=ASL_TRAIN_DIR,
+    cache: bool = False,
 ):
     """Return (train_ds, val_ds, test_ds, class_names).
 
@@ -89,17 +90,24 @@ def make_datasets(
     test_ds = holdout_ds.skip(val_batches)
 
     augment = _augment_layer()
-    # Cache the *normalised* images, then augment AFTER the cache so the random
-    # augmentation is resampled every epoch. (Augmenting before .cache() would
-    # freeze one augmented version per image for the whole run.)
+    # NOTE: in-memory .cache() is OFF by default. The full ASL Alphabet (~87k images at
+    # 224x224) would need ~40 GB cached — an OOM on Colab's 12.7 GB RAM. Enable cache=True
+    # only for a small subset locally. When cached, we cache the *normalised* images and
+    # augment AFTER, so the random augmentation is still resampled every epoch.
+    train_ds = train_ds.map(_normalise, num_parallel_calls=AUTOTUNE)
+    if cache:
+        train_ds = train_ds.cache()
     train_ds = (
-        train_ds.map(_normalise, num_parallel_calls=AUTOTUNE)
-        .cache()
-        .shuffle(1000, seed=SEED)
+        train_ds.shuffle(1000, seed=SEED)
         .map(lambda x, y: (augment(x, training=True), y), num_parallel_calls=AUTOTUNE)
         .prefetch(AUTOTUNE)
     )
-    val_ds = val_ds.map(_normalise, num_parallel_calls=AUTOTUNE).cache().prefetch(AUTOTUNE)
-    test_ds = test_ds.map(_normalise, num_parallel_calls=AUTOTUNE).cache().prefetch(AUTOTUNE)
+
+    val_ds = val_ds.map(_normalise, num_parallel_calls=AUTOTUNE)
+    test_ds = test_ds.map(_normalise, num_parallel_calls=AUTOTUNE)
+    if cache:
+        val_ds, test_ds = val_ds.cache(), test_ds.cache()
+    val_ds = val_ds.prefetch(AUTOTUNE)
+    test_ds = test_ds.prefetch(AUTOTUNE)
 
     return train_ds, val_ds, test_ds, class_names
