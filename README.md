@@ -15,6 +15,22 @@ A **bidirectional** communication PoC between a Deaf/HoH signer and a hearing no
 
 See [docs/architecture.md](docs/architecture.md) for the full system diagram.
 
+## Status & results
+
+Both recognition tracks are complete — each with a trained, scorecard-picked winner — and both
+directions run **live** on the desktop apps.
+
+| Track | Winner (from a 4-model bake-off) | Result |
+|-------|----------------------------------|--------|
+| **Fingerspelling** (image CNN) | EfficientNetB0 | **≈ 99.9 %** accuracy; exported to a **4.9 MB** TFLite model |
+| **Word signs** (sequence model) | Transformer | **78 %** over 20 words; **20 ms** inference |
+| **Synthesis** (Text/Speech → Sign) | rule-based + clips | runs live; fingerspells out-of-vocab words |
+
+Highlights: **landmark normalization** took word recognition from chance (5 %) to 78 %; a **data
+investigation** (WLASL was 62 % dead → recovered clips + switched to ASL Citizen) tripled the word
+data; **Grad-CAM** confirms the models attend to the *hand*. Full write-up in
+**[docs/results.md](docs/results.md)**; demo runbook in **[docs/presentation.md](docs/presentation.md)**.
+
 ## What this repo does
 
 **Recognition — fingerspelling.** Following **CRISP-DM**, a **model bake-off** for static
@@ -22,8 +38,10 @@ ASL fingerspelling: a **CNN built from scratch** competes against pre-trained ba
 (MobileNetV2, EfficientNetB0, ResNet50) under one fixed protocol. The winner — chosen by a
 weighted scorecard (accuracy, latency, size, robustness, live stability) — ships in the app.
 
-**Recognition — words.** A dynamic word module (**MediaPipe Holistic + LSTM**) recognises a
-curated word vocabulary from landmark sequences.
+**Recognition — words.** A dynamic word module — **MediaPipe Holistic landmarks + a
+sequence-model bake-off** (LSTM / GRU / BiLSTM / Transformer). The **Transformer wins** (78 %
+over a 20-word vocabulary). A word sign is a *motion*, so its candidates are sequence models,
+not image CNNs.
 
 **Synthesis.** Text (typed or from **ASR**) → rule-based ASL gloss → a sequence of
 pre-recorded sign clips, with **fingerspelling fallback** so it never dead-ends.
@@ -77,10 +95,11 @@ Run steps 4–5 on Colab (open `recognition/notebooks/02_bakeoff.ipynb`); run st
 ### Recognition — whole-word signs (dynamic LSTM)
 
 ```bash
-python data/download_sign_clips.py --videos /path/to/wlasl_videos   # clips + landmark seqs
-python -m recognition.src.train_word --epochs 40                    # train the word LSTM
-python desktop/app.py --model recognition/models/<winner>.keras \
-                      --word-model recognition/models/lstm_word.keras
+python data/download_wlasl.py && python data/download_sign_clips.py   # WLASL clips + landmarks
+python data/prepare_asl_citizen.py --zip data/ASL_Citizen.zip        # + ASL Citizen (recommended)
+python -m recognition.src.train_word --model all --epochs 60 --augment 8   # word bake-off
+python -m recognition.src.evaluate_word                              # scorecard -> winner
+python desktop/app.py --word-model recognition/models/word_transformer.keras
 ```
 
 ### Track B — Synthesis (Text/Speech → Sign)
@@ -121,7 +140,7 @@ groopy/
 ├── desktop/                    # PyQt apps: app.py (recognition), synthesis_app.py (synthesis)
 ├── app/                        # Flutter shell (mobile/web) — Dart contract mirror
 ├── tests/                      # headless smoke tests
-└── docs/                       # architecture.md, data_contract.md
+└── docs/                       # architecture, data_contract, results, presentation
 ```
 
 ## The data contract (shared with Track B)
@@ -137,7 +156,10 @@ See `docs/data_contract.md`. Lock it before parallel work begins.
 ## Datasets & licences
 
 - **ASL Alphabet** (Kaggle, grassknoted) — 87k images, 29 classes. Core fingerspelling data.
-- **WLASL100** — word-level ASL subset for the dynamic module (C-UDA, non-commercial).
+- **ASL Citizen** (Microsoft, NeurIPS 2023) — ~30 videos/sign from everyday, consenting signers.
+  Primary word-recognition data.
+- **WLASL** — word-level ASL (non-commercial); supplements the word data.
 - **TunSL** (warcoder / Mendeley) — 4,423 images, 57 signs, CC BY 4.0. Tunisian pilot only.
 
-Check every licence before shipping. WLASL is non-commercial.
+Check every licence before shipping. WLASL is non-commercial; ASL Citizen requires its licence for
+commercial use.
