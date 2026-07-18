@@ -97,8 +97,12 @@ def make_datasets(
     train_ds = train_ds.map(_normalise, num_parallel_calls=AUTOTUNE)
     if cache:
         train_ds = train_ds.cache()
+    # image_dataset_from_directory yields already-BATCHED elements, so this shuffle buffer
+    # counts BATCHES, not images. A buffer of 1000 would hold 1000*batch_size images
+    # (~19 GB at batch 32) and OOM. Keep it small — the file order is already shuffled by
+    # image_dataset_from_directory each epoch, so this only adds local mixing.
     train_ds = (
-        train_ds.shuffle(1000, seed=SEED)
+        train_ds.shuffle(32, seed=SEED, reshuffle_each_iteration=True)
         .map(lambda x, y: (augment(x, training=True), y), num_parallel_calls=AUTOTUNE)
         .prefetch(AUTOTUNE)
     )
