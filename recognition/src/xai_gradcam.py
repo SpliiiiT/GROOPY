@@ -21,10 +21,13 @@ from .data import make_datasets
 def _last_conv_layer_name(model: tf.keras.Model) -> str:
     """Find the last 4D (conv) output layer, descending into a nested base model."""
     def _is_4d(layer) -> bool:
-        try:
-            return len(layer.output_shape) == 4
-        except (AttributeError, RuntimeError):
-            return False
+        # Keras 3 exposes layer.output.shape; Keras 2 used layer.output_shape.
+        for get in (lambda l: l.output.shape, lambda l: l.output_shape):
+            try:
+                return len(get(layer)) == 4
+            except Exception:
+                continue
+        return False
 
     def search(m):
         for layer in reversed(m.layers):
