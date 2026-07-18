@@ -66,3 +66,13 @@ SCORECARD_WEIGHTS = {
 # Mobile deployment constraints (desktop path relaxes these)
 MAX_LATENCY_MS = 150
 MAX_SIZE_MB = 5.0
+
+# ----------------------------------------------------------------------------
+# Word-sign bake-off scorecard (sequence models). All criteria are automatic —
+# accuracy dominates, with real-time latency + model size as tie-breakers.
+# ----------------------------------------------------------------------------
+WORD_SCORECARD_WEIGHTS = {
+    "accuracy": 0.60,     # macro-F1 on the held-out sequences
+    "latency": 0.20,      # ms per sequence (lower better)
+    "size": 0.20,         # model size in MB (lower better)
+}

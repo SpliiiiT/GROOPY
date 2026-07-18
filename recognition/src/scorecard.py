@@ -27,31 +27,34 @@ def _minmax(values: List[float], higher_better: bool) -> List[float]:
     return [(hi - v) / (hi - lo) for v in values]  # invert: smaller -> closer to 1
 
 
-def score(rows: List[Dict]) -> List[Dict]:
-    """rows: list of dicts with keys accuracy, latency, size, robustness, stability, model.
+def score(rows: List[Dict], weights: Dict[str, float] = None) -> List[Dict]:
+    """rows: list of dicts with the criteria named in `weights` (+ 'model').
 
-    Returns the rows augmented with per-criterion normalised scores and a 'total'.
+    Returns the rows augmented with per-criterion normalised scores and a 'total'. `weights`
+    defaults to the CNN SCORECARD_WEIGHTS; pass a different mapping (e.g. the word bake-off's)
+    to reuse this for any candidate set. Higher-is-better/lower-is-better criteria are min-max
+    normalised across candidates; any other criterion is treated as an already-[0,1] manual
+    score.
     """
+    weights = weights or SCORECARD_WEIGHTS
     out = [dict(r) for r in rows]
 
-    for crit in ("accuracy", "latency", "size"):
-        vals = [r[crit] for r in rows]
-        norm = _minmax(vals, higher_better=(crit in HIGHER_BETTER))
-        for r, n in zip(out, norm):
-            r[f"norm_{crit}"] = round(n, 4)
-
-    for crit in MANUAL:
-        for r in out:
-            r[f"norm_{crit}"] = float(r.get(crit, 0.0))
+    for crit in weights:
+        if crit in HIGHER_BETTER or crit in LOWER_BETTER:
+            vals = [r[crit] for r in rows]
+            norm = _minmax(vals, higher_better=(crit in HIGHER_BETTER))
+            for r, n in zip(out, norm):
+                r[f"norm_{crit}"] = round(n, 4)
+        else:  # manual criterion, already in [0,1]
+            for r in out:
+                r[f"norm_{crit}"] = float(r.get(crit, 0.0))
 
     for r in out:
-        r["total"] = round(
-            sum(SCORECARD_WEIGHTS[c] * r[f"norm_{c}"] for c in SCORECARD_WEIGHTS), 4
-        )
+        r["total"] = round(sum(weights[c] * r[f"norm_{c}"] for c in weights), 4)
 
     out.sort(key=lambda r: r["total"], reverse=True)
     return out
 
 
-def winner(rows: List[Dict]) -> Dict:
-    return score(rows)[0]
+def winner(rows: List[Dict], weights: Dict[str, float] = None) -> Dict:
+    return score(rows, weights)[0]
