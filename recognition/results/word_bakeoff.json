@@ -1,0 +1,46 @@
+[
+  {
+    "model": "gru",
+    "accuracy": 0.7542,
+    "macro_f1": 0.7472,
+    "latency": 142.22,
+    "size": 2.35,
+    "norm_accuracy": 0.7267,
+    "norm_latency": 0.4401,
+    "norm_size": 1.0,
+    "total": 0.724
+  },
+  {
+    "model": "transformer",
+    "accuracy": 0.7458,
+    "macro_f1": 0.7494,
+    "latency": 21.35,
+    "size": 3.13,
+    "norm_accuracy": 0.6367,
+    "norm_latency": 1.0,
+    "norm_size": 0.6438,
+    "total": 0.7108
+  },
+  {
+    "model": "bilstm",
+    "accuracy": 0.7797,
+    "macro_f1": 0.7914,
+    "latency": 237.23,
+    "size": 4.54,
+    "norm_accuracy": 1.0,
+    "norm_latency": 0.0,
+    "norm_size": 0.0,
+    "total": 0.6
+  },
+  {
+    "model": "lstm",
+    "accuracy": 0.6864,
+    "macro_f1": 0.6487,
+    "latency": 118.18,
+    "size": 3.08,
+    "norm_accuracy": 0.0,
+    "norm_latency": 0.5515,
+    "norm_size": 0.6667,
+    "total": 0.2436
+  }
+]

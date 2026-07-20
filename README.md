@@ -23,10 +23,10 @@ directions run **live** on the desktop apps.
 | Track | Winner (from a 4-model bake-off) | Result |
 |-------|----------------------------------|--------|
 | **Fingerspelling** (image CNN) | EfficientNetB0 | **≈ 99.9 %** accuracy; exported to a **4.9 MB** TFLite model |
-| **Word signs** (sequence model) | Transformer | **78 %** over 20 words; **20 ms** inference |
+| **Word signs** (sequence model) | Transformer | **~75 %** over 20 words; **21 ms** inference (GRU narrowly tops the scorecard, but Transformer ships — same accuracy within noise, far faster live) |
 | **Synthesis** (Text/Speech → Sign) | rule-based + clips | runs live; fingerspells out-of-vocab words |
 
-Highlights: **landmark normalization** took word recognition from chance (5 %) to 78 %; a **data
+Highlights: **landmark normalization** took word recognition from chance (5 %) to 75 %; a **data
 investigation** (WLASL was 62 % dead → recovered clips + switched to ASL Citizen) tripled the word
 data; **Grad-CAM** confirms the models attend to the *hand*. Full write-up in
 **[docs/results.md](docs/results.md)**; demo runbook in **[docs/presentation.md](docs/presentation.md)**.
@@ -39,9 +39,10 @@ ASL fingerspelling: a **CNN built from scratch** competes against pre-trained ba
 weighted scorecard (accuracy, latency, size, robustness, live stability) — ships in the app.
 
 **Recognition — words.** A dynamic word module — **MediaPipe Holistic landmarks + a
-sequence-model bake-off** (LSTM / GRU / BiLSTM / Transformer). The **Transformer wins** (78 %
-over a 20-word vocabulary). A word sign is a *motion*, so its candidates are sequence models,
-not image CNNs.
+sequence-model bake-off** (LSTM / GRU / BiLSTM / Transformer). GRU narrowly tops the scorecard,
+but the **Transformer ships** (~75 % over a 20-word vocabulary, ~7× faster inference — same
+accuracy-vs-deployment trade-off as the fingerspelling bake-off). A word sign is a *motion*, so
+its candidates are sequence models, not image CNNs.
 
 **Synthesis.** Text (typed or from **ASR**) → rule-based ASL gloss → a sequence of
 pre-recorded sign clips, with **fingerspelling fallback** so it never dead-ends.

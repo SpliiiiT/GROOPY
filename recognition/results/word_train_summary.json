@@ -1,0 +1,38 @@
+[
+  {
+    "model": "lstm",
+    "params": 253012,
+    "train_seconds": 50.7,
+    "best_val_accuracy": 0.7373,
+    "test_accuracy": 0.6864,
+    "epochs_run": 12,
+    "model_path": "C:\\Users\\Oussama\\Desktop\\AI PI\\groopy\\recognition\\models\\word_lstm.keras"
+  },
+  {
+    "model": "gru",
+    "params": 191700,
+    "train_seconds": 65.9,
+    "best_val_accuracy": 0.8136,
+    "test_accuracy": 0.7542,
+    "epochs_run": 16,
+    "model_path": "C:\\Users\\Oussama\\Desktop\\AI PI\\groopy\\recognition\\models\\word_gru.keras"
+  },
+  {
+    "model": "bilstm",
+    "params": 372692,
+    "train_seconds": 88.2,
+    "best_val_accuracy": 0.7542,
+    "test_accuracy": 0.7797,
+    "epochs_run": 18,
+    "model_path": "C:\\Users\\Oussama\\Desktop\\AI PI\\groopy\\recognition\\models\\word_bilstm.keras"
+  },
+  {
+    "model": "transformer",
+    "params": 241876,
+    "train_seconds": 53.3,
+    "best_val_accuracy": 0.8305,
+    "test_accuracy": 0.7458,
+    "epochs_run": 15,
+    "model_path": "C:\\Users\\Oussama\\Desktop\\AI PI\\groopy\\recognition\\models\\word_transformer.keras"
+  }
+]

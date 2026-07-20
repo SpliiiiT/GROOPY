@@ -1,0 +1,11 @@
+{
+  "model": "gru",
+  "accuracy": 0.7542,
+  "macro_f1": 0.7472,
+  "latency": 142.22,
+  "size": 2.35,
+  "norm_accuracy": 0.7267,
+  "norm_latency": 0.4401,
+  "norm_size": 1.0,
+  "total": 0.724
+}

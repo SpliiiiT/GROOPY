@@ -80,23 +80,31 @@ the candidates are **sequence models**, not image CNNs.
 
 | Rank | Model | Accuracy | Macro-F1 | Latency | Size | **Score** |
 |---|---|---|---|---|---|---|
-| **1** | **transformer** | **0.780** | 0.778 | **20 ms** | 3.1 MB | **0.93** |
-| 2 | gru | 0.771 | 0.773 | 89 ms | 2.4 MB | 0.68 |
-| 3 | bilstm | 0.771 | 0.780 | 178 ms | 4.5 MB | 0.44 |
-| 4 | lstm (baseline) | 0.703 | 0.690 | 89 ms | 3.1 MB | 0.30 |
+| **1** | **gru** | 0.754 | 0.747 | 142 ms | 2.4 MB | **0.724** |
+| 2 | transformer | 0.746 | 0.749 | **21 ms** | 3.1 MB | 0.711 |
+| 3 | bilstm | **0.780** | **0.791** | 237 ms | 4.5 MB | 0.600 |
+| 4 | lstm (baseline) | 0.686 | 0.649 | 118 ms | 3.1 MB | 0.244 |
 
-*Scorecard weights: accuracy 60 %, latency 20 %, size 20 %.*
+*Scorecard weights: accuracy 60 %, latency 20 %, size 20 %. All 4 models retrained after a
+platform migration (Keras 2 → 3); numbers here are the current retrain, not the original run.*
 
-### Key finding: the Transformer wins on both accuracy *and* speed
-The **self-attention Transformer** is the highest accuracy (78 %) **and** the fastest
-(20 ms — ~4× faster than the recurrent models, because attention parallelises whereas
-LSTMs/GRUs process frames sequentially). Every newer architecture beat the LSTM baseline.
+### Key finding: the scorecard winner isn't the deployment pick — again
+On this run **GRU narrowly tops the scorecard** (0.724 vs. Transformer's 0.711), and **BiLSTM has
+the highest raw accuracy** (78.0 %). But the top three sit within 3 accuracy points of each other
+on a **118-sample test set** — well inside retrain-to-retrain noise for this data size, so small
+scorecard-rank swings between runs are expected, not a real capability difference.
+
+**We still ship the Transformer.** It's the fastest candidate by a wide margin (21 ms vs. 142–237 ms
+for the recurrent models — attention parallelises across the sequence, recurrence can't), and at
+this accuracy level the models are statistically indistinguishable. For a **live** capture-to-commit
+UX, latency dominates. Same conclusion as the fingerspelling bake-off (§3): the scorecard's weights
+encode priorities, and a shipped product can legitimately weight differently than a leaderboard.
 
 ---
 
 ## 5. The data-scarcity investigation (word track)
 
-Word recognition began at **chance (5 %)** and reached **78 %**. The journey is itself a result:
+Word recognition began at **chance (5 %)** and reached **75 %**. The journey is itself a result:
 
 | Stage | Data | Test accuracy |
 |---|---|---|
@@ -105,7 +113,7 @@ Word recognition began at **chance (5 %)** and reached **78 %**. The journey is 
 | **+ landmark normalization** | 131 clips | **0.37** |
 | + recovered source-URL clips | 151 clips | 0.41 |
 | + ASL Citizen dataset | 791 clips (~40/class) | 0.70 |
-| **+ Transformer (bake-off)** | 791 clips | **0.78** |
+| **+ Transformer (bake-off)** | 791 clips | **0.75** |
 
 Two decisive moves:
 1. **Landmark normalization** (recentring on the shoulder midpoint, scaling by shoulder width)
@@ -169,7 +177,7 @@ fingerspells `my` and `O-U-S-S-A-M-A`.
 ## 9. Honest limitations
 
 - It is a **proof of concept, not an interpreter**.
-- Word recognition covers a **20-word vocabulary** at **78 %** — usable for a demo, not
+- Word recognition covers a **20-word vocabulary** at **~75 %** — usable for a demo, not
   production; live single-signer accuracy is lower than the test figure.
 - Text→sign uses a **naive gloss** (word lookup), not full ASL grammar.
 - Sign output is a **fixed clip dictionary**; coverage is bounded by available clips.
@@ -183,5 +191,5 @@ fingerspells `my` and `O-U-S-S-A-M-A`.
 GROOPY delivers a working, bidirectional sign-language PoC with **two rigorous CRISP-DM
 bake-offs**, explainability, and live demos in both directions. The strongest outcomes are
 methodological: a **fair, weighted comparison** that surfaces the accuracy-vs-deployment
-trade-off; a **normalization fix** that took word recognition from chance to 78 %; and an
+trade-off; a **normalization fix** that took word recognition from chance to 75 %; and an
 **evidence-based data investigation** that turned a scarcity wall into a working model.
