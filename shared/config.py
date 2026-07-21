@@ -8,12 +8,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+from .paths import app_root
+
+REPO_ROOT = app_root()
 
 DATA_DIR = REPO_ROOT / "data"
-# Fingerspelling fallback assets = the ASL Alphabet letter images (same data Recognition
-# trains on). One representative image per letter is enough for playback.
-LETTERS_DIR = DATA_DIR / "asl_alphabet_train"
+# Fingerspelling fallback assets: one curated representative image per letter (A-Z), committed
+# to git — synthesis only ever displays one image per letter (see player.py's _first_image),
+# so it doesn't need the full 1.3GB/87k-image ASL Alphabet training set Recognition trains on.
+# Also makes this bundleable into a packaged app. Regenerate via a one-off copy of the first
+# sorted image per letter from data/asl_alphabet_train if this set ever needs refreshing.
+LETTERS_DIR = REPO_ROOT / "synthesis" / "assets" / "letters"
 
 # Synthesis word-sign clip dictionary (gitignored; populated by data/download_sign_clips.py
 # or synthesis/make_stub_clips.py).

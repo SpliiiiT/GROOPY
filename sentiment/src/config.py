@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from shared.paths import app_root
+
+REPO_ROOT = app_root()
 RESULTS_DIR = REPO_ROOT / "sentiment" / "results"
 MODELS_DIR = REPO_ROOT / "sentiment" / "models"
 

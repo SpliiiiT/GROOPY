@@ -7,10 +7,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from shared.paths import app_root
+
 # ----------------------------------------------------------------------------
-# Paths (repo-root relative, so it works on Colab and locally without edits)
+# Paths (repo-root relative, so it works on Colab, locally, and packaged without edits)
 # ----------------------------------------------------------------------------
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = app_root()
 DATA_DIR = REPO_ROOT / "data"
 ASL_TRAIN_DIR = DATA_DIR / "asl_alphabet_train"   # created by download_asl_alphabet.py
 ASL_TEST_DIR = DATA_DIR / "asl_alphabet_test"

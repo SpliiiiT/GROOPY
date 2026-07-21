@@ -34,6 +34,12 @@ sentiment/models/*.pkl
 # Results are committed selectively; ignore large caches
 recognition/results/cache/
 
+# PyInstaller build output (packaging/groopy.spec) — rebuild locally, don't commit ~2GB
+build/
+dist/
+dist_stdout.log
+dist_stderr.log
+
 # Python
 __pycache__/
 *.py[cod]
