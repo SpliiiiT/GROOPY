@@ -1,0 +1,11 @@
+{
+  "model": "distilbert",
+  "accuracy": 0.86,
+  "latency": 40.46,
+  "size": 267.82,
+  "load_seconds": 77.48,
+  "norm_accuracy": 1.0,
+  "norm_latency": 0.5053,
+  "norm_size": 0.4636,
+  "total": 0.7443
+}

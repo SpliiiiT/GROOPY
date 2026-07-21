@@ -28,6 +28,8 @@ recognition/models/*.h5
 recognition/models/*.tflite
 recognition/models/*_tfjs/
 !recognition/models/.gitkeep
+sentiment/models/*.pkl
+!sentiment/models/.gitkeep
 
 # Results are committed selectively; ignore large caches
 recognition/results/cache/

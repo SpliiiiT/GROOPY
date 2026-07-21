@@ -1,0 +1,35 @@
+[
+  {
+    "model": "distilbert",
+    "accuracy": 0.86,
+    "latency": 40.46,
+    "size": 267.82,
+    "load_seconds": 77.48,
+    "norm_accuracy": 1.0,
+    "norm_latency": 0.5053,
+    "norm_size": 0.4636,
+    "total": 0.7443
+  },
+  {
+    "model": "scratch",
+    "accuracy": 0.768,
+    "latency": 0.6,
+    "size": 0.84,
+    "load_seconds": 0.08,
+    "norm_accuracy": 0.3235,
+    "norm_latency": 1.0,
+    "norm_size": 1.0,
+    "total": 0.6618
+  },
+  {
+    "model": "twitter_roberta",
+    "accuracy": 0.724,
+    "latency": 81.18,
+    "size": 498.59,
+    "load_seconds": 121.96,
+    "norm_accuracy": 0.0,
+    "norm_latency": 0.0,
+    "norm_size": 0.0,
+    "total": 0.0
+  }
+]

@@ -1,0 +1,11 @@
+# Sentiment bake-off only (optional — the default LexiconBackend has zero dependencies,
+# so the rest of the system runs fine without any of this).
+# In addition to the repo's requirements.txt (needs scikit-learn, already there, for the
+# from-scratch TF-IDF + Logistic Regression candidate).
+
+# Pretrained candidates need PyTorch — HuggingFace transformers dropped TensorFlow model
+# support in recent versions (only PyTorch classes are available), so this is a second
+# framework, isolated to this track only. Install the CPU-only wheel (this project doesn't
+# use GPU locally on Windows anyway) BEFORE `pip install -r sentiment/requirements.txt`:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+transformers>=4.40

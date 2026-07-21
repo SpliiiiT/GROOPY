@@ -16,9 +16,11 @@ choices to make, with exact code hooks and effort estimates.*
 - **`synthesis/src/pipeline.py`** — `synthesize()` already calls `analyze()` and attaches the
   result; **`apply_sentiment(plan, sentiment)` is the seam** — currently a **pass-through no-op**.
 - **`desktop/synthesis_app.py`** — already **displays the sentiment label** under the gloss.
+- **`sentiment/src/models.py`, `train_scratch.py`, `evaluate.py`, `eval_realistic.py`** — a real
+  scratch-vs-pretrained bake-off (see Decision B below), opt-in via `set_backend()`.
 
-So sentiment is *computed, carried, and shown* today. The open question is only: **what should it
-DO?**
+So sentiment is *computed, carried, and shown* today, with a real model available if you want one.
+The open question is only: **what should sentiment DO?** (Decision A, below — still yours to make.)
 
 ---
 
@@ -39,15 +41,54 @@ DO?**
 - Honour those fields in `synthesis/src/player.py` (loop the clip / extend the pause).
 - No change needed to `analyze.py` or the contract.
 
-### Decision B — how good the sentiment *model* is
+### Decision B — how good the sentiment *model* is — DONE (2026-07-21), a real bake-off
 
-| Option | What it is | Effort |
-|--------|-----------|--------|
-| **B1 · Keep the lexicon stub** | Fine for a PoC; deterministic, no dependencies. | 0 |
-| **B2 · Plug a real model** | e.g. a HuggingFace `transformers` sentiment pipeline, wired via `set_backend()`. Better accuracy, adds a dependency + download. | ~½ day |
+Built a 3-way bake-off, mirroring the CNN/word tracks: one from-scratch candidate vs. two
+pretrained ones, scored on a fixed protocol (`sentiment/src/evaluate.py`).
 
-`analyze.py` is already structured for B2 — implement a class with a `score(text) -> Sentiment`
-method and call `set_backend(YourBackend())`. Nothing else changes.
+| Candidate | What it is |
+|---|---|
+| **scratch** | TF-IDF + Logistic Regression, trained from scratch on IMDB (`train_scratch.py`) — no GPU/Colab needed, trains in ~9s on CPU. |
+| **distilbert** | `distilbert-base-uncased-finetuned-sst-2-english` — pretrained, general-purpose, binary. |
+| **twitter_roberta** | `cardiffnlp/twitter-roberta-base-sentiment-latest` — pretrained, natively 3-class, tuned on short informal text. |
+
+**Bake-off #1 — IMDB accuracy/latency/size scorecard** (weights: accuracy 50%, latency 30%,
+size 20%):
+
+| Rank | Model | Accuracy | Latency (ms) | Size (MB) | Score |
+|------|-------|----------|---------------|-----------|-------|
+| 1 | distilbert | 0.860 | 40.5 | 267.8 | **0.744** |
+| 2 | scratch | 0.768 | 0.6 | 0.8 | 0.662 |
+| 3 | twitter_roberta | 0.724 | 81.2 | 498.6 | 0.0 |
+
+**This pick turned out to be wrong for actual deployment.** IMDB has zero neutral reviews, so
+this metric can't reward or punish neutral-detection quality — and `distilbert` was trained only
+on movie-review polarity, so it has no real concept of "neutral" at all. A second check on 20
+hand-labeled, app-realistic sentences (greetings, everyday statements, clear emotion, negation —
+`sentiment/src/eval_realistic.py`, `sentiment/results/realistic_eval.json`) caught it:
+
+| Model | Overall | Positive | Negative | Neutral |
+|---|---|---|---|---|
+| **twitter_roberta** | **100%** | 6/6 | 8/8 | **6/6** |
+| scratch | 90% | 5/6 | 7/8 | 6/6 |
+| distilbert | 70% | 6/6 | 8/8 | **0/6** |
+
+`distilbert` gets **every single neutral sentence wrong** ("hello my name is Oussama" → positive
+100%, "the box is on the table" → positive 95%) — it was never trained to hedge, so it forces
+everything into pos/neg. `twitter_roberta` is perfect. The 500MB/80ms cost that looks bad in
+bake-off #1 doesn't actually matter in practice: sentiment runs once per typed/spoken sentence
+(a button click), not per-frame like the vision models, so even 80ms is imperceptible.
+
+**Recommendation: `twitter_roberta`** (`sentiment/src/models.py`'s `RECOMMENDED_MODEL`), not the
+raw scorecard winner. Report-worthy finding either way: **the benchmark you pick determines the
+winner you get** — IMDB accuracy alone would have shipped a model that fails on roughly a third of
+realistic input. Activate it with:
+```python
+from sentiment.src import analyze, models
+analyze.set_backend(models.load_recommended_backend())
+```
+The default stays the dependency-free `LexiconBackend` unless you opt in — `transformers`+`torch`
+(~1GB combined, see `sentiment/requirements.txt`) are optional, not required to run the system.
 
 ---
 
@@ -56,9 +97,10 @@ method and call `set_backend(YourBackend())`. Nothing else changes.
 - **Decision A → A1 now, A2 if time allows.** A1 is essentially done and already demoable. A2 is a
   small, visible "wow" (sentiment changes *how* it signs) and stays within our clip pipeline.
   Skip **A3** (avatar) — out of scope.
-- **Decision B → B2 if you want a real ML contribution** (a trained/pretrained sentiment model is a
-  nice thing to present); otherwise **B1** is a valid PoC choice — just be explicit that it's a
-  rule-based baseline.
+- **Decision B → done.** `twitter_roberta` is built, evaluated two ways, and ready to opt into via
+  `load_recommended_backend()` — a real ML contribution with a genuinely interesting CRISP-DM
+  story (the first evaluation protocol picked the wrong model; a domain-realistic recheck caught
+  it). `B1` (the lexicon stub) remains the safe zero-dependency default.
 
 Whatever you pick for A, it's a change to **one function** (`apply_sentiment`) — the rest of the
 system already carries and displays sentiment, so nothing else needs to move.
@@ -69,7 +111,9 @@ system already carries and displays sentiment, so nothing else needs to move.
 
 | To change… | Edit |
 |------------|------|
-| The sentiment model | `sentiment/src/analyze.py` (add a backend, `set_backend`) |
+| The sentiment model | `sentiment/src/analyze.py` (`set_backend`); candidates live in `sentiment/src/models.py` |
+| Opt into the real model | `analyze.set_backend(models.load_recommended_backend())` |
+| Re-run the bake-off | `python -m sentiment.src.evaluate` (IMDB), `python -m sentiment.src.eval_realistic` (domain check) |
 | What sentiment drives | `synthesis/src/pipeline.py` → `apply_sentiment(plan, sentiment)` |
 | Plan step timing/repeat (for A2) | `synthesis/src/gloss_to_signplan.py` + `synthesis/src/player.py` |
 | Where the label shows | `desktop/synthesis_app.py` (already done) |
