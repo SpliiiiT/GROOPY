@@ -94,6 +94,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.speak = speak
         self._tts = self._init_tts() if speak else None
         self.sentence: list[str] = []
+        # Live fingerspelling guess, captured to the sentence on Space (like words) rather
+        # than auto-committing every debounce tick -- same capture-to-commit UX for both.
+        self._last_letter: tuple[str, float] | None = None
 
         # UI
         self.video_label = QtWidgets.QLabel(alignment=QtCore.Qt.AlignCenter)
@@ -104,8 +107,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.text_label.setStyleSheet("font-size: 20px; color: #333;")
         self.text_label.setWordWrap(True)
 
-        capture_btn = QtWidgets.QPushButton("Capture word  (Space)")
-        capture_btn.clicked.connect(self._capture_word)
+        capture_btn = QtWidgets.QPushButton("Capture  (Space)")
+        capture_btn.clicked.connect(self._capture)
         clear_btn = QtWidgets.QPushButton("Clear")
         clear_btn.clicked.connect(self._clear)
         btn_row = QtWidgets.QHBoxLayout()
@@ -159,10 +162,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sentence = []
         self.text_label.setText("")
 
+    def _capture(self) -> None:
+        """Commit whichever is currently live: a ready word sign takes priority (it's the
+        rarer, more deliberate state — the buffer only becomes 'ready' after holding a sign
+        ~1s), otherwise a fingerspelled letter, matching the same capture-to-commit UX."""
+        if self.word_signer is not None:
+            ws = self.word_signer.word_stream
+            if ws.ready and ws.last_gloss is not None:
+                self._capture_word()
+                return
+        if self.recognizer is not None:
+            self._capture_letter()
+            return
+        self.pred_label.setText("… nothing to capture yet")
+
     def _capture_word(self) -> None:
         """Commit the current live word guess to the sentence, then reset the buffer."""
-        if self.word_signer is None:
-            return
         ws = self.word_signer.word_stream
         if not ws.ready or ws.last_gloss is None:
             self.pred_label.setText("… hold a sign steady ~1s, then Space")
@@ -177,9 +192,19 @@ class MainWindow(QtWidgets.QMainWindow):
         ))
         ws.reset()  # fresh window for the next sign
 
+    def _capture_letter(self) -> None:
+        """Commit the current live fingerspelling guess to the sentence (if any)."""
+        if self._last_letter is None:
+            self.pred_label.setText("… show a letter, then Space")
+            return
+        label, conf = self._last_letter
+        token = self.stream.update(label, conf)
+        if token is not None:
+            self._apply_token(token)
+
     def keyPressEvent(self, event) -> None:
         if event.key() == QtCore.Qt.Key_Space:
-            self._capture_word()
+            self._capture()
         else:
             super().keyPressEvent(event)
 
@@ -198,11 +223,10 @@ class MainWindow(QtWidgets.QMainWindow):
             label, conf = self.recognizer.predict(frame)
             if label == NO_HAND:
                 self.pred_label.setText("no hand detected — show a letter")
+                self._last_letter = None
             else:
-                self.pred_label.setText(f"{label}   ({conf:.0%})")
-            token = self.stream.update(label, conf)
-            if token is not None:
-                self._apply_token(token)
+                self.pred_label.setText(f"{label}   ({conf:.0%})   — Space to add")
+                self._last_letter = (label, conf)
 
         # Optional whole-word path: feed the same frame to the word signer for a LIVE guess.
         # Words are committed only on Capture (Space) — a sliding window would otherwise spew
