@@ -223,11 +223,25 @@ executable** (not mobile/web — those would need a different framework/export p
 
 ---
 
+## 8. Packaged desktop app — completed, and the CNN training-curve plot
+
+The packaged app (§7) is fully working: `desktop/launcher.py` opens both directions from one
+window, `packaging/groopy.spec` bundles everything needed. Two real bugs surfaced getting the
+*built* app to actually *run* — MediaPipe ships its own graph/model data files that PyInstaller's
+default analysis doesn't auto-collect (fixed with `collect_data_files("mediapipe")`), and
+torch/transformers got bundled anyway despite never being used by the packaged app's default path
+(excluded explicitly, 2.4GB → 1.9GB). A third issue was found during testing, unrelated to
+packaging: fingerspelling auto-committed a letter every debounce tick, the same "spews noise"
+problem words already had fixed — now both require Space to commit.
+
+The Colab re-run (§3) also finished and its download-zip cell worked as designed — all 4 CNN
+history files came back cleanly, `mobilenetv2.keras`/`resnet50.keras` load fine locally (same
+Keras-3.x-to-3.x compatibility already reasoned about), and `cnn_training_curves.png` is built
+alongside `word_training_curves.png`.
+
 ## What's still open
 
 - **Kaggle token rotation** — a live token has been pasted in chat 3× across sessions; still not
   rotated. Pure housekeeping.
-- **CNN training-curve plot** — waiting on the Colab re-run (§3) to finish and its download-zip
-  cell to be run.
-- **Packaged app** — build + launch verification in progress (§7).
-- Nothing else sentiment-related is open — both Decision A and B are done.
+- Nothing else is open — both bake-offs have training curves, sentiment's Decision A and B are
+  both done, and the packaged app works end to end.
