@@ -95,8 +95,32 @@ def test_sentiment_and_seam():
     assert analyze("the box is here").label == "neutral"
     r = synthesize(text="hello friend I am happy", with_sentiment=True)
     assert r.sentiment.label == "positive"
-    # apply_sentiment is a no-op seam for now
+    # Decision A2: confident, non-neutral sentiment emphasises WordClip steps.
+    assert r.sentiment.score >= 0.75  # this sentence should clear the emphasis threshold
+    word_clips = [s for s in r.plan.steps if isinstance(s, WordClip)]
+    assert word_clips, "expected at least one WordClip step for this sentence"
+    assert all(s.repeat == 2 and s.hold_ms == 400 for s in word_clips)
+    # gloss/lettering content itself is untouched by emphasis
     assert apply_sentiment(r.plan, r.sentiment).summary() == r.plan.summary()
+
+
+def test_apply_sentiment_noop_cases():
+    """Weak, neutral, or missing sentiment must leave the plan untouched (defaults preserved)."""
+    plan = build_sign_plan(["hello"])
+    clip = plan.steps[0]
+    assert isinstance(clip, WordClip)
+
+    apply_sentiment(plan, None)
+    assert clip.hold_ms == 0 and clip.repeat == 1
+
+    apply_sentiment(plan, Sentiment("neutral", 0.9))
+    assert clip.hold_ms == 0 and clip.repeat == 1
+
+    apply_sentiment(plan, Sentiment("positive", 0.6))  # below the emphasis threshold
+    assert clip.hold_ms == 0 and clip.repeat == 1
+
+    apply_sentiment(plan, Sentiment("positive", 0.9))  # confident -> emphasised
+    assert clip.hold_ms == 400 and clip.repeat == 2
 
 
 def _run() -> int:

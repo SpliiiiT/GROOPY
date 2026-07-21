@@ -30,16 +30,21 @@ The open question is only: **what should sentiment DO?** (Decision A, below — 
 
 | Option | What it does | Effort | Feasible with our clip-based synthesis? |
 |--------|--------------|--------|------------------------------------------|
-| **A1 · Label only** | Show an emoji/label ("positive 🙂"); no effect on signing. | **~0** (mostly done) | ✅ Yes |
-| **A2 · Emphasis / speed** | Strong sentiment → slower playback + hold/repeat key signs (like tone of voice). | **~1 evening** | ✅ Yes |
+| **A1 · Label only** | Show an emoji/label ("positive 🙂"); no effect on signing. | **~0** (done) | ✅ Yes |
+| **A2 · Emphasis / speed** | Strong sentiment → slower playback + hold/repeat key signs (like tone of voice). | **DONE (2026-07-21)** | ✅ Yes |
 | **A3 · Facial expression** | Map sentiment to ASL **non-manual markers** (facial expression). Linguistically the "right" answer. | **Large** | ❌ Needs a 3D **avatar** — we play fixed clips, so not feasible without rebuilding the output |
 
-**Implementation sketch for A2** (the one worth doing):
-- Add fields to the plan steps in `synthesis/src/gloss_to_signplan.py` (e.g. `hold_ms`, `repeat`).
-- Implement `apply_sentiment(plan, sentiment)` in `synthesis/src/pipeline.py`: for
-  `abs(score) high & label != neutral`, increase `hold_ms` / set `repeat=2` on `WordClip` steps.
-- Honour those fields in `synthesis/src/player.py` (loop the clip / extend the pause).
-- No change needed to `analyze.py` or the contract.
+**A2 is built** — `apply_sentiment(plan, sentiment)` in `synthesis/src/pipeline.py` is no longer a
+no-op: confident, non-neutral sentiment (`label != "neutral"` and `score >= 0.75`) sets
+`hold_ms=400`/`repeat=2` on the plan's `WordClip` steps only (fingerspelled/out-of-vocabulary
+words are untouched — emphasis lands on the actual emotional-content signs, not names/rare
+words). `synthesis/src/gloss_to_signplan.py`'s `WordClip`/`Fingerspell` both carry `hold_ms`/
+`repeat` fields (default 0/1 — no effect on an unmodified plan); `synthesis/src/player.py`
+honours them by replaying the clip/fingerspell sequence and holding an extra pause after.
+Verified live in `desktop/synthesis_app.py`: "hello friend I am happy" (score 1.0) visibly
+replays and holds each clip; a neutral sentence plays exactly as before. No change needed to
+`analyze.py` or the contract — this consumes the `Sentiment` that's already being computed
+and carried.
 
 ### Decision B — how good the sentiment *model* is — DONE (2026-07-21), a real bake-off
 
@@ -94,9 +99,9 @@ The default stays the dependency-free `LexiconBackend` unless you opt in — `tr
 
 ## Recommendation (for a PoC / soutenance)
 
-- **Decision A → A1 now, A2 if time allows.** A1 is essentially done and already demoable. A2 is a
-  small, visible "wow" (sentiment changes *how* it signs) and stays within our clip pipeline.
-  Skip **A3** (avatar) — out of scope.
+- **Decision A → done.** A1 (label) and A2 (emphasis/replay on confident sentiment) are both built
+  and verified live — sentiment now visibly changes *how* the app signs, not just a label under
+  the gloss. Skip **A3** (avatar) — out of scope.
 - **Decision B → done.** `twitter_roberta` is built, evaluated two ways, and ready to opt into via
   `load_recommended_backend()` — a real ML contribution with a genuinely interesting CRISP-DM
   story (the first evaluation protocol picked the wrong model; a domain-realistic recheck caught

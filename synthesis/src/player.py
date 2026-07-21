@@ -51,29 +51,34 @@ def play_sign_plan(
             if not step.clip_path.is_file():
                 _report(f"[missing clip] {step.gloss} -> {step.clip_path}")
                 continue
-            cap = cv2.VideoCapture(str(step.clip_path))
-            while True:
-                ok, frame = cap.read()
-                if not ok:
-                    break
-                cv2.imshow(window, frame)
-                if cv2.waitKey(delay) & 0xFF in (ord("q"), 27):
-                    cap.release()
-                    cv2.destroyAllWindows()
-                    return
-            cap.release()
+            for _ in range(max(1, step.repeat)):  # sentiment emphasis (Decision A2): replay
+                cap = cv2.VideoCapture(str(step.clip_path))
+                while True:
+                    ok, frame = cap.read()
+                    if not ok:
+                        break
+                    cv2.imshow(window, frame)
+                    if cv2.waitKey(delay) & 0xFF in (ord("q"), 27):
+                        cap.release()
+                        cv2.destroyAllWindows()
+                        return
+                cap.release()
+            if step.hold_ms and cv2.waitKey(step.hold_ms) & 0xFF in (ord("q"), 27):
+                cv2.destroyAllWindows()
+                return
         elif isinstance(step, Fingerspell):
-            for ltr, ldir in zip(step.letters, step.letter_dirs(letters_dir)):
-                img_path = _first_image(ldir)
-                if img_path is None:
-                    _report(f"[missing letter image] {ltr} -> {ldir}")
-                    continue
-                img = cv2.imread(str(img_path))
-                if img is None:
-                    _report(f"[unreadable image] {img_path}")
-                    continue
-                cv2.imshow(window, img)
-                if cv2.waitKey(letter_hold_ms) & 0xFF in (ord("q"), 27):
-                    cv2.destroyAllWindows()
-                    return
+            for _ in range(max(1, step.repeat)):
+                for ltr, ldir in zip(step.letters, step.letter_dirs(letters_dir)):
+                    img_path = _first_image(ldir)
+                    if img_path is None:
+                        _report(f"[missing letter image] {ltr} -> {ldir}")
+                        continue
+                    img = cv2.imread(str(img_path))
+                    if img is None:
+                        _report(f"[unreadable image] {img_path}")
+                        continue
+                    cv2.imshow(window, img)
+                    if cv2.waitKey(letter_hold_ms + step.hold_ms) & 0xFF in (ord("q"), 27):
+                        cv2.destroyAllWindows()
+                        return
     cv2.destroyAllWindows()

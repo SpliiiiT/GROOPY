@@ -3,10 +3,10 @@
 This is the single entry point the desktop demo (and any UI) calls. It ties together the
 text-to-gloss rules, the clip/fingerspell planner, and the optional sentiment annotation.
 
-The sentiment SEAM lives here as `apply_sentiment` — currently a PASS-THROUGH no-op. When
-you and your partner decide what sentiment should drive (a displayed label, slower/emphasised
-playback, avatar expression), implement it there; nothing else in the pipeline needs to
-change. The computed Sentiment is already carried on the Result today.
+The sentiment SEAM lives here as `apply_sentiment` — Decision A2 (see docs/sentiment_options.md):
+strong, non-neutral sentiment adds emphasis (a held pause + a replay) to the WordClip steps of
+the plan, like tone of voice. A3 (avatar facial expression) is still out of scope — no avatar
+output exists to drive.
 """
 from __future__ import annotations
 
@@ -17,8 +17,15 @@ from typing import Optional
 from shared.config import CLIPS_DIR, LETTERS_DIR
 from shared.contract import Sentiment
 
-from .gloss_to_signplan import SignPlan, build_sign_plan
+from .gloss_to_signplan import SignPlan, WordClip, build_sign_plan
 from .text_to_gloss import text_to_gloss
+
+# Decision A2 tuning: only emphasise CONFIDENT non-neutral sentiment (score is [0,1]
+# confidence/intensity of the label, per shared/contract.Sentiment) — a borderline call
+# shouldn't visibly change playback.
+EMPHASIS_SCORE_THRESHOLD = 0.75
+EMPHASIS_HOLD_MS = 400  # extra pause held after the clip finishes
+EMPHASIS_REPEAT = 2     # replay the clip this many times
 
 
 @dataclass
@@ -32,12 +39,18 @@ class Result:
 
 
 def apply_sentiment(plan: SignPlan, sentiment: Optional[Sentiment]) -> SignPlan:
-    """SEAM (currently no-op): let sentiment modulate the SignPlan.
-
-    Deliberately does nothing yet — the team hasn't decided sentiment's behavioural role.
-    Candidates when you do: attach per-step emphasis/speed, reorder, or add facial-marker
-    cues (avatar path only). Return the (possibly modified) plan.
+    """Decision A2: strong, non-neutral sentiment emphasises the plan's WordClip steps
+    (held pause + replay) — like tone of voice. Mutates and returns `plan`; a weak/neutral/
+    missing sentiment leaves it untouched, so this stays a no-op in exactly those cases.
     """
+    if sentiment is None or sentiment.label == "neutral":
+        return plan
+    if sentiment.score < EMPHASIS_SCORE_THRESHOLD:
+        return plan
+    for step in plan.steps:
+        if isinstance(step, WordClip):
+            step.hold_ms = EMPHASIS_HOLD_MS
+            step.repeat = EMPHASIS_REPEAT
     return plan
 
 

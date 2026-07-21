@@ -25,6 +25,11 @@ class WordClip:
     gloss: str
     clip_path: Path
     kind: str = field(default="word", init=False)
+    # Sentiment emphasis (Decision A2, see synthesis/src/pipeline.apply_sentiment): extra
+    # pause after the clip (ms) and how many times to replay it. Both default to "no effect"
+    # so an unmodified plan behaves exactly as before.
+    hold_ms: int = 0
+    repeat: int = 1
 
 
 @dataclass
@@ -34,6 +39,11 @@ class Fingerspell:
     word: str
     letters: list[str]  # uppercase A-Z, in order
     kind: str = field(default="fingerspell", init=False)
+    # Sentiment emphasis — see WordClip. Not set by apply_sentiment today (fingerspelling is
+    # mostly out-of-vocabulary names/rare words, not the emotional content of an utterance),
+    # but honoured by player.py for symmetry if ever set.
+    hold_ms: int = 0
+    repeat: int = 1
 
     def letter_dirs(self, letters_dir: Path = LETTERS_DIR) -> list[Path]:
         """Per-letter directory of ASL-alphabet images (player picks a frame from each)."""
