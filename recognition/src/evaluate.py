@@ -7,8 +7,11 @@ For every trained model in recognition/models it computes on the held-out TEST s
   - model size on disk (MB)
 
 Then it applies the weighted scorecard and writes a ranked bake-off table + a
-winner.json. Robustness/stability default to 0.5 until you fill them in from the
-Grad-CAM/bias review and the live test (see xai_gradcam.py).
+winner.json. Robustness is a manual [0,1] score from the Grad-CAM/bias review (see
+xai_gradcam.py) — ROBUSTNESS_SCORES below holds the values already reported in
+docs/results.md sec. 6; any model not in that dict falls back to the 0.5 "unreviewed"
+placeholder. Stability needs a live-webcam pass per model and is still unfilled (0.5)
+for all candidates — update STABILITY_SCORES the same way once that's done.
 
 Usage:
   python -m recognition.src.evaluate
@@ -32,6 +35,20 @@ from sklearn.metrics import (
 from . import scorecard as scorecard_mod
 from .config import INPUT_SHAPE, MODELS_DIR, RESULTS_DIR
 from .data import make_datasets
+
+# Manual [0,1] scores from the Grad-CAM review (recognition/src/xai_gradcam.py) — see
+# docs/results.md sec. 6. efficientnetb0/cnn_scratch are read directly off the heatmaps;
+# resnet50/mobilenetv2 are estimated (same rank, not separately Grad-CAM'd). A model not
+# listed here falls back to the 0.5 "unreviewed" placeholder rather than guessing.
+ROBUSTNESS_SCORES = {
+    "efficientnetb0": 0.85,
+    "cnn_scratch": 0.65,
+    "resnet50": 0.80,
+    "mobilenetv2": 0.70,
+}
+# Manual [0,1] scores from a live-webcam pass — none run yet across all 4 CNN candidates,
+# so every model still falls back to the 0.5 placeholder until that review happens.
+STABILITY_SCORES: dict = {}
 
 
 def _size_mb(path: Path) -> float:
@@ -108,9 +125,9 @@ def evaluate_model(name: str, model_path: Path, test_ds, class_names) -> dict:
         "macro_recall": round(float(rec), 4),
         "latency": round(_latency_ms(model), 2),   # ms/frame
         "size": round(_size_mb(model_path), 2),    # MB
-        # manual criteria — fill in after the Grad-CAM/bias + live review:
-        "robustness": 0.5,
-        "stability": 0.5,
+        # manual criteria — see ROBUSTNESS_SCORES/STABILITY_SCORES above; 0.5 = unreviewed
+        "robustness": ROBUSTNESS_SCORES.get(name, 0.5),
+        "stability": STABILITY_SCORES.get(name, 0.5),
     }
     print(
         f"[{name}] acc={row['accuracy']:.4f} f1={row['macro_f1']:.4f} "
@@ -141,7 +158,10 @@ def main() -> None:
     win = ranked[0]
     (RESULTS_DIR / "winner.json").write_text(json.dumps(win, indent=2))
     print(f"\nWINNER: {win['model']}  (total score {win['total']})")
-    print("Note: robustness/stability are 0.5 placeholders — update them after XAI + live test.")
+    unreviewed_robustness = [r["model"] for r in rows if r["model"] not in ROBUSTNESS_SCORES]
+    if unreviewed_robustness:
+        print(f"Note: robustness still 0.5 (unreviewed) for: {', '.join(unreviewed_robustness)}.")
+    print("Note: stability is still a 0.5 placeholder for every model — needs a live-webcam pass.")
 
 
 def _write_markdown(ranked) -> None:
@@ -159,8 +179,9 @@ def _write_markdown(ranked) -> None:
     lines += [
         "",
         "_Scorecard weights: accuracy 40%, latency 20%, size 15%, robustness 15%, "
-        "stability 10%. Robustness/stability are manual [0,1] scores from the Grad-CAM/"
-        "bias review and the live-webcam test._",
+        "stability 10%. Robustness is a manual [0,1] score from the Grad-CAM review "
+        "(0.5 = not yet reviewed); stability is a manual [0,1] score from a live-webcam "
+        "pass (0.5 = not yet run for any candidate)._",
     ]
     (RESULTS_DIR / "bakeoff.md").write_text("\n".join(lines))
 
