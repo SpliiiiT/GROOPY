@@ -1,9 +1,13 @@
 # Core deep learning
-tensorflow==2.17.1        # Keras 3. Pin the SAME version in recognition/notebooks/02_bakeoff.ipynb's
-                          # Colab cell so retrains stay in the same Keras 3.x line as local — an
-                          # unpinned notebook is what caused the 2.15(Keras2)-vs-Colab(Keras3) mismatch.
+tensorflow==2.17.1        # Keras 3 (fixes the local Keras-2-vs-Colab-Keras-3 load mismatch this
+                          # project hit). Do NOT pin this same version in 02_bakeoff.ipynb's Colab
+                          # cell — that was tried, and forcing numpy<2 there breaks ABI
+                          # compatibility with Colab's own preinstalled numpy-2.x-compiled packages
+                          # (jax, pandas, ...). Local and Colab no longer need to match exactly: both
+                          # are on Keras 3 now, and Keras 3's save format is compatible within the
+                          # 3.x line, so Colab can just use its own default TF.
 keras==3.15.0             # pinned explicitly (not just via tensorflow's floor) to avoid drifting to a
-                          # newer 3.x that Colab or a future local reinstall might pick independently.
+                          # newer 3.x on a future local reinstall.
 numpy>=1.24,<2.0
 pandas>=2.0
 
