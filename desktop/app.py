@@ -27,12 +27,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from PyQt5 import QtCore, QtGui, QtWidgets  # noqa: E402
 
 from recognition.src.config import CLASS_NAMES, IMG_SIZE  # noqa: E402
-from recognition.src.preprocess import crop_and_preprocess  # noqa: E402
+from recognition.src.preprocess import crop_hand, preprocess_for_model  # noqa: E402
 from recognition.src.token_stream import TokenStream  # noqa: E402
+
+NO_HAND = "no_hand"  # sentinel label: distinct from any real CLASS_NAMES prediction
 
 
 class Recognizer:
-    """Loads the winning keras model and turns a frame into (label, confidence)."""
+    """Loads the winning keras model and turns a frame into (label, confidence).
+
+    Only runs the model when MediaPipe actually finds a hand in frame — otherwise the CNN
+    has no choice but to argmax some letter out of background noise (same problem WordStream
+    solves for whole-word signs). crop_and_preprocess's "fall back to the full frame" behaviour
+    is right for offline cropping, wrong for live inference, so this bypasses it and gates on
+    crop_hand directly.
+    """
 
     def __init__(self, model_path: str) -> None:
         import tensorflow as tf
@@ -41,9 +50,10 @@ class Recognizer:
         self.class_names = CLASS_NAMES
 
     def predict(self, bgr_frame) -> tuple[str, float]:
-        x = crop_and_preprocess(bgr_frame, static=False)  # (H,W,3) float [0,1]
-        if x is None:
-            return "nothing", 0.0
+        crop = crop_hand(bgr_frame, static=False)
+        if crop is None:
+            return NO_HAND, 0.0
+        x = preprocess_for_model(crop)
         probs = self.model.predict(np.expand_dims(x, 0), verbose=0)[0]
         idx = int(np.argmax(probs))
         return self.class_names[idx], float(probs[idx])
@@ -186,7 +196,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # worker and deliver (label, conf) back via a signal.
         if self.recognizer is not None:
             label, conf = self.recognizer.predict(frame)
-            self.pred_label.setText(f"{label}   ({conf:.0%})")
+            if label == NO_HAND:
+                self.pred_label.setText("no hand detected — show a letter")
+            else:
+                self.pred_label.setText(f"{label}   ({conf:.0%})")
             token = self.stream.update(label, conf)
             if token is not None:
                 self._apply_token(token)
