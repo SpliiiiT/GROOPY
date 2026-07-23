@@ -40,7 +40,7 @@ from .data import make_datasets
 # docs/results.md sec. 6. efficientnetb0/cnn_scratch are read directly off the heatmaps;
 # resnet50/mobilenetv2 are estimated (same rank, not separately Grad-CAM'd). A model not
 # listed here falls back to the 0.5 "unreviewed" placeholder rather than guessing.
-ROBUSTNESS_SCORES = {
+ROBUSTNESS_SCORES = {                        # how tightly each model attends to the hand (from Grad-CAM)
     "efficientnetb0": 0.85,
     "cnn_scratch": 0.65,
     "resnet50": 0.80,
@@ -48,35 +48,35 @@ ROBUSTNESS_SCORES = {
 }
 # Manual [0,1] scores from a live-webcam pass — none run yet across all 4 CNN candidates,
 # so every model still falls back to the 0.5 placeholder until that review happens.
-STABILITY_SCORES: dict = {}
+STABILITY_SCORES: dict = {}                  # empty -> everyone gets the 0.5 placeholder for now
 
 
 def _size_mb(path: Path) -> float:
-    if path.is_file():
+    if path.is_file():                        # a single .keras file
         return path.stat().st_size / 1e6
-    return sum(p.stat().st_size for p in path.rglob("*") if p.is_file()) / 1e6
+    return sum(p.stat().st_size for p in path.rglob("*") if p.is_file()) / 1e6   # or a saved-model dir
 
 
 def _latency_ms(model: tf.keras.Model, n: int = 50) -> float:
     # Use direct __call__ (not model.predict) to measure true per-frame inference
     # time — predict() adds Python/dispatch overhead that would inflate this metric,
     # which feeds 20% of the scorecard.
-    dummy = tf.constant(np.random.rand(1, *INPUT_SHAPE).astype("float32"))
-    model(dummy, training=False)  # warmup (builds the graph)
+    dummy = tf.constant(np.random.rand(1, *INPUT_SHAPE).astype("float32"))   # one fake image
+    model(dummy, training=False)  # warmup (builds the graph)                 # not timed
     t0 = time.time()
-    for _ in range(n):
+    for _ in range(n):                        # time n forward passes
         model(dummy, training=False)
-    return (time.time() - t0) / n * 1000.0
+    return (time.time() - t0) / n * 1000.0    # average ms per frame
 
 
 def _plot_confusion(cm, class_names, out_path: Path) -> None:
     import matplotlib
 
-    matplotlib.use("Agg")
+    matplotlib.use("Agg")                     # headless (save to file, no display)
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(10, 9))
-    im = ax.imshow(cm, cmap="Blues")
+    im = ax.imshow(cm, cmap="Blues")          # confusion matrix as a heat image
     ax.set_xticks(range(len(class_names)))
     ax.set_yticks(range(len(class_names)))
     ax.set_xticklabels(class_names, rotation=90, fontsize=7)
@@ -90,13 +90,13 @@ def _plot_confusion(cm, class_names, out_path: Path) -> None:
 
 
 def evaluate_model(name: str, model_path: Path, test_ds, class_names) -> dict:
-    model = tf.keras.models.load_model(model_path)
+    model = tf.keras.models.load_model(model_path)     # load one trained candidate
 
     y_true, y_pred = [], []
-    for images, labels in test_ds:
+    for images, labels in test_ds:                     # run the whole test set
         probs = model.predict(images, verbose=0)
-        y_pred.extend(np.argmax(probs, axis=1).tolist())
-        y_true.extend(labels.numpy().tolist())
+        y_pred.extend(np.argmax(probs, axis=1).tolist())   # predicted classes
+        y_true.extend(labels.numpy().tolist())             # true classes
 
     # Pin labels to the full class set so every metric/matrix spans all 29 classes,
     # even when a small test split or the model's predictions miss some classes.
@@ -104,20 +104,20 @@ def evaluate_model(name: str, model_path: Path, test_ds, class_names) -> dict:
     # which crashes classification_report and misaligns the confusion-matrix axes.)
     all_labels = list(range(len(class_names)))
 
-    acc = accuracy_score(y_true, y_pred)
+    acc = accuracy_score(y_true, y_pred)               # overall accuracy
     prec, rec, f1, _ = precision_recall_fscore_support(
         y_true, y_pred, labels=all_labels, average="macro", zero_division=0
-    )
-    cm = confusion_matrix(y_true, y_pred, labels=all_labels)
-    _plot_confusion(cm, class_names, RESULTS_DIR / f"confusion_{name}.png")
+    )                                                  # macro precision/recall/F1 (each class equal)
+    cm = confusion_matrix(y_true, y_pred, labels=all_labels)      # 29x29 confusion matrix
+    _plot_confusion(cm, class_names, RESULTS_DIR / f"confusion_{name}.png")   # save it as a figure
 
     report = classification_report(
         y_true, y_pred, labels=all_labels, target_names=class_names,
         zero_division=0, output_dict=True,
     )
-    (RESULTS_DIR / f"report_{name}.json").write_text(json.dumps(report, indent=2))
+    (RESULTS_DIR / f"report_{name}.json").write_text(json.dumps(report, indent=2))   # per-class breakdown
 
-    row = {
+    row = {                                            # one bake-off row for this model
         "model": name,
         "accuracy": round(float(acc), 4),
         "macro_f1": round(float(f1), 4),
@@ -141,31 +141,31 @@ def main() -> None:
     parser.add_argument("--models-dir", default=str(MODELS_DIR))
     args = parser.parse_args()
 
-    _, _, test_ds, class_names = make_datasets()
+    _, _, test_ds, class_names = make_datasets()       # the same held-out test set for every model
 
     rows = []
-    for model_path in sorted(Path(args.models_dir).glob("*.keras")):
+    for model_path in sorted(Path(args.models_dir).glob("*.keras")):   # evaluate every trained model
         rows.append(evaluate_model(model_path.stem, model_path, test_ds, class_names))
 
     if not rows:
         print("No .keras models found. Train first: python -m recognition.src.train")
         return
 
-    ranked = scorecard_mod.score(rows)
+    ranked = scorecard_mod.score(rows)                 # weighted ranking (accuracy/latency/size/robustness/stability)
     (RESULTS_DIR / "bakeoff.json").write_text(json.dumps(ranked, indent=2))
-    _write_markdown(ranked)
+    _write_markdown(ranked)                            # human-readable table
 
-    win = ranked[0]
+    win = ranked[0]                                    # the winner
     (RESULTS_DIR / "winner.json").write_text(json.dumps(win, indent=2))
     print(f"\nWINNER: {win['model']}  (total score {win['total']})")
     unreviewed_robustness = [r["model"] for r in rows if r["model"] not in ROBUSTNESS_SCORES]
-    if unreviewed_robustness:
+    if unreviewed_robustness:                          # be honest about which manual scores are placeholders
         print(f"Note: robustness still 0.5 (unreviewed) for: {', '.join(unreviewed_robustness)}.")
     print("Note: stability is still a 0.5 placeholder for every model — needs a live-webcam pass.")
 
 
 def _write_markdown(ranked) -> None:
-    lines = [
+    lines = [                                          # assemble the results.md table
         "# Bake-off results",
         "",
         "| Rank | Model | Acc | F1 | Latency (ms) | Size (MB) | Score |",

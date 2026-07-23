@@ -37,86 +37,86 @@ from .data import make_datasets
 
 
 def _set_seeds() -> None:
-    tf.random.set_seed(SEED)
-    tf.keras.utils.set_random_seed(SEED)
+    tf.random.set_seed(SEED)                 # seed TF ops so weight init / shuffles are reproducible
+    tf.keras.utils.set_random_seed(SEED)     # seeds python/numpy/tf together
 
 
 def _callbacks():
     return [
         tf.keras.callbacks.EarlyStopping(
-            monitor="val_accuracy",
-            patience=EARLY_STOPPING_PATIENCE,
-            restore_best_weights=True,
+            monitor="val_accuracy",          # watch validation accuracy
+            patience=EARLY_STOPPING_PATIENCE,# stop after N epochs with no improvement
+            restore_best_weights=True,       # roll back to the best epoch (key overfitting guard)
         ),
         tf.keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss",
-            factor=0.3,
+            monitor="val_loss",              # watch validation loss
+            factor=0.3,                      # when it stalls, cut LR to 30%
             patience=REDUCE_LR_PATIENCE,
-            min_lr=1e-6,
+            min_lr=1e-6,                     # don't go below this
         ),
     ]
 
 
 def _compile(model: tf.keras.Model, lr: float) -> None:
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(lr),
-        loss="sparse_categorical_crossentropy",
+        optimizer=tf.keras.optimizers.Adam(lr),          # Adam optimiser at the given learning rate
+        loss="sparse_categorical_crossentropy",          # multi-class loss with integer labels
         metrics=["accuracy"],
     )
 
 
 def train_one(name: str, epochs: int, train_ds, val_ds) -> dict:
-    _set_seeds()
-    model = model_zoo.build(name, NUM_CLASSES, INPUT_SHAPE)
-    is_pretrained = name in model_zoo.PRETRAINED
+    _set_seeds()                                         # same starting point for every candidate (fairness)
+    model = model_zoo.build(name, NUM_CLASSES, INPUT_SHAPE)   # build the requested architecture
+    is_pretrained = name in model_zoo.PRETRAINED         # does it have a frozen backbone to fine-tune?
 
-    t0 = time.time()
+    t0 = time.time()                                     # start timing the whole training
 
     # Phase 1: train head (frozen base for pretrained; full net for scratch)
-    _compile(model, LEARNING_RATE)
+    _compile(model, LEARNING_RATE)                       # LR = 1e-3
     hist1 = model.fit(
         train_ds, validation_data=val_ds, epochs=epochs, callbacks=_callbacks(), verbose=2
     )
-    history = {k: [float(v) for v in vs] for k, vs in hist1.history.items()}
+    history = {k: [float(v) for v in vs] for k, vs in hist1.history.items()}   # keep the training curves
 
     # Phase 2: fine-tune the top of a pretrained backbone at a lower LR
     if is_pretrained:
-        backbone = _backbone_layers(model)
+        backbone = _backbone_layers(model)               # resolve the inlined backbone layers by name
         # unfreeze the backbone, then keep only the last ~30 layers trainable to stay
         # stable on a small GPU, and keep BatchNorm layers frozen (standard practice)
         for layer in backbone:
-            layer.trainable = True
+            layer.trainable = True                       # unfreeze everything...
         for layer in backbone[:-30]:
-            layer.trainable = False
+            layer.trainable = False                      # ...then re-freeze all but the last ~30
         for layer in backbone:
             if isinstance(layer, tf.keras.layers.BatchNormalization):
-                layer.trainable = False
-        _compile(model, LEARNING_RATE / 10.0)
+                layer.trainable = False                  # keep BN frozen (moving stats shouldn't shift on small data)
+        _compile(model, LEARNING_RATE / 10.0)            # recompile at LR/10 = 1e-4 (gentle fine-tune)
         hist2 = model.fit(
             train_ds,
             validation_data=val_ds,
-            epochs=max(5, epochs // 2),
+            epochs=max(5, epochs // 2),                  # fewer epochs for the fine-tune phase
             callbacks=_callbacks(),
             verbose=2,
         )
         for k, vs in hist2.history.items():
-            history.setdefault(k, []).extend(float(v) for v in vs)
+            history.setdefault(k, []).extend(float(v) for v in vs)   # append phase-2 curves
 
-    train_seconds = time.time() - t0
+    train_seconds = time.time() - t0                     # total wall-clock training time
 
     model_path = MODELS_DIR / f"{name}.keras"
-    model.save(model_path)
+    model.save(model_path)                               # persist the trained model
 
-    record = {
+    record = {                                           # summary row for the bake-off / reporting
         "model": name,
         "pretrained": is_pretrained,
-        "params": int(model.count_params()),
+        "params": int(model.count_params()),             # model size in parameters
         "train_seconds": round(train_seconds, 1),
         "best_val_accuracy": max(history.get("val_accuracy", [0.0])),
         "epochs_run": len(history.get("loss", [])),
         "model_path": str(model_path),
     }
-    (RESULTS_DIR / f"history_{name}.json").write_text(
+    (RESULTS_DIR / f"history_{name}.json").write_text(   # save curves + record for plots/evaluate
         json.dumps({"record": record, "history": history}, indent=2)
     )
     print(f"[{name}] saved -> {model_path}  best_val_acc={record['best_val_accuracy']:.4f}")
@@ -133,10 +133,10 @@ def _backbone_layers(model: tf.keras.Model) -> list:
     the names back to the shared layer objects here so toggling `trainable` affects the
     outer model after recompilation.
     """
-    names = getattr(model, "base_layer_names", None)
+    names = getattr(model, "base_layer_names", None)     # names stashed by the builder
     if not names:
         raise RuntimeError("Model has no .base_layer_names for fine-tuning.")
-    return [model.get_layer(n) for n in names]
+    return [model.get_layer(n) for n in names]           # name -> actual layer object
 
 
 def main() -> None:
@@ -147,12 +147,12 @@ def main() -> None:
                         help="override the training image root (e.g. a subset for a quick run)")
     args = parser.parse_args()
 
-    names = list(model_zoo.REGISTRY) if args.model == "all" else [args.model]
+    names = list(model_zoo.REGISTRY) if args.model == "all" else [args.model]   # which candidates to train
     ds_kwargs = {"data_dir": args.data_dir} if args.data_dir else {}
-    train_ds, val_ds, _test_ds, class_names = make_datasets(**ds_kwargs)
+    train_ds, val_ds, _test_ds, class_names = make_datasets(**ds_kwargs)        # build the shared datasets once
     print("Classes:", class_names)
 
-    summary = [train_one(n, args.epochs, train_ds, val_ds) for n in names]
+    summary = [train_one(n, args.epochs, train_ds, val_ds) for n in names]      # train each candidate
     (RESULTS_DIR / "train_summary.json").write_text(json.dumps(summary, indent=2))
     print("\nTraining complete. Run:  python -m recognition.src.evaluate")
 

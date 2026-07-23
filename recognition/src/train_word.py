@@ -36,35 +36,35 @@ def _callbacks():
     return [
         tf.keras.callbacks.EarlyStopping(
             monitor="val_accuracy", patience=EARLY_STOPPING_PATIENCE, restore_best_weights=True
-        ),
+        ),                                                       # stop early, keep the best epoch
         tf.keras.callbacks.ReduceLROnPlateau(
             monitor="val_loss", factor=0.3, patience=REDUCE_LR_PATIENCE, min_lr=1e-6
-        ),
+        ),                                                       # drop LR when val loss stalls
     ]
 
 
 def train_one(name, epochs, batch_size, data) -> dict:
     (X_tr, y_tr), (X_val, y_val), (X_te, y_te) = data
-    tf.keras.utils.set_random_seed(SEED)
-    model = word_models.build(name, NUM_WORDS, SEQ_LEN, FRAME_FEATURES)
+    tf.keras.utils.set_random_seed(SEED)                         # reproducible init/shuffle for every candidate
+    model = word_models.build(name, NUM_WORDS, SEQ_LEN, FRAME_FEATURES)   # build the requested sequence model
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(LEARNING_RATE),
-        loss="sparse_categorical_crossentropy",
+        optimizer=tf.keras.optimizers.Adam(LEARNING_RATE),       # Adam @ 1e-3
+        loss="sparse_categorical_crossentropy",                  # integer-label multi-class loss
         metrics=["accuracy"],
     )
     t0 = time.time()
     hist = model.fit(
-        X_tr, y_tr, validation_data=(X_val, y_val), epochs=epochs,
+        X_tr, y_tr, validation_data=(X_val, y_val), epochs=epochs,   # single-phase training (trained from scratch)
         batch_size=batch_size, callbacks=_callbacks(), verbose=2,
     )
     train_seconds = time.time() - t0
 
-    test_acc = float(model.evaluate(X_te, y_te, verbose=0)[1]) if len(X_te) else float("nan")
+    test_acc = float(model.evaluate(X_te, y_te, verbose=0)[1]) if len(X_te) else float("nan")   # held-out test accuracy
     model_path = MODELS_DIR / f"word_{name}.keras"
-    model.save(model_path)
+    model.save(model_path)                                       # persist the model
 
-    history = {k: [float(v) for v in vs] for k, vs in hist.history.items()}
-    record = {
+    history = {k: [float(v) for v in vs] for k, vs in hist.history.items()}   # training curves
+    record = {                                                   # summary row for the report/plots
         "model": name,
         "params": int(model.count_params()),
         "train_seconds": round(train_seconds, 1),
@@ -90,15 +90,15 @@ def main() -> None:
                         help="augmented copies per train sample (0 = off). Vital for tiny data.")
     args = parser.parse_args()
 
-    names = list(word_models.REGISTRY) if args.model == "all" else [args.model]
+    names = list(word_models.REGISTRY) if args.model == "all" else [args.model]   # which candidates
     (X_tr, y_tr), (X_val, y_val), (X_te, y_te), class_names = load_dataset(
-        augment_factor=args.augment
+        augment_factor=args.augment                              # grow the tiny train set ×augment
     )
     print(f"train={len(X_tr)} (augment x{args.augment}) val={len(X_val)} test={len(X_te)} "
           f"classes={len(class_names)}\nCandidates: {names}")
     data = ((X_tr, y_tr), (X_val, y_val), (X_te, y_te))
 
-    summary = [train_one(n, args.epochs, args.batch_size, data) for n in names]
+    summary = [train_one(n, args.epochs, args.batch_size, data) for n in names]   # train each candidate
     (RESULTS_DIR / "word_train_summary.json").write_text(json.dumps(summary, indent=2))
     print("\nTraining complete. Run:  python -m recognition.src.evaluate_word")
 

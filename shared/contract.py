@@ -15,16 +15,16 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Optional
 
-CONTRACT_VERSION = "v2"
+CONTRACT_VERSION = "v2"          # bump when the shape changes; lets consumers detect the version
 
 # Control tokens shared by both tracks. NOTE: "del" (not "delete") — matches the ASL
 # Alphabet class names and the desktop app. Keep in sync with docs/data_contract.md.
-CONTROL_TOKENS = {"del", "nothing", "space"}
+CONTROL_TOKENS = {"del", "nothing", "space"}   # non-letter classes handled specially
 
 # Token.kind values.
-KIND_LETTER = "letter"
-KIND_WORD = "word"
-KIND_CONTROL = "control"
+KIND_LETTER = "letter"           # a fingerspelled letter (from the CNN)
+KIND_WORD = "word"               # a whole-word sign (from the sequence model)
+KIND_CONTROL = "control"         # del / nothing / space
 
 
 @dataclass
@@ -36,15 +36,15 @@ class Sentiment:
     Its behavioural effect on signing is not decided yet — carried as metadata for now.
     """
 
-    label: str
-    score: float
+    label: str                   # "positive" | "neutral" | "negative"
+    score: float                 # 0..1 confidence/intensity of the label
 
     def to_dict(self) -> dict:
-        return {"label": self.label, "score": round(float(self.score), 3)}
+        return {"label": self.label, "score": round(float(self.score), 3)}   # JSON-friendly form
 
     @staticmethod
     def from_dict(d: Optional[dict]) -> "Optional[Sentiment]":
-        if not d:
+        if not d:                # None/empty -> no sentiment (round-trips cleanly)
             return None
         return Sentiment(label=str(d["label"]), score=float(d["score"]))
 
@@ -61,27 +61,27 @@ class Token:
     sentiment: optional Sentiment metadata (v2+).
     """
 
-    token: str
-    confidence: float
-    timestamp: int
-    kind: str
-    sentiment: Optional[Sentiment] = field(default=None)
+    token: str                   # the normalised payload (letter / gloss / control)
+    confidence: float            # 0..1, always at/above the gate when emitted
+    timestamp: int               # epoch milliseconds at prediction time
+    kind: str                    # one of KIND_LETTER / KIND_WORD / KIND_CONTROL
+    sentiment: Optional[Sentiment] = field(default=None)   # optional metadata (default None = v1-compatible)
 
     def to_dict(self) -> dict:
-        d = asdict(self)
+        d = asdict(self)         # dataclass -> plain dict (recurses into sentiment)
         # asdict recurses into the dataclass; normalise sentiment via its own to_dict
-        d["sentiment"] = self.sentiment.to_dict() if self.sentiment else None
-        d["confidence"] = round(float(self.confidence), 3)
+        d["sentiment"] = self.sentiment.to_dict() if self.sentiment else None   # keep sentiment tidy/None-safe
+        d["confidence"] = round(float(self.confidence), 3)   # round for a clean wire format
         return d
 
     @staticmethod
     def from_dict(d: dict) -> "Token":
-        return Token(
+        return Token(            # rebuild a Token from its dict form (e.g. after JSON transport)
             token=str(d["token"]),
             confidence=float(d["confidence"]),
             timestamp=int(d["timestamp"]),
-            kind=str(d.get("kind", KIND_LETTER)),
-            sentiment=Sentiment.from_dict(d.get("sentiment")),
+            kind=str(d.get("kind", KIND_LETTER)),        # default kind if an old payload omits it
+            sentiment=Sentiment.from_dict(d.get("sentiment")),   # None-safe
         )
 
 

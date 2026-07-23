@@ -17,9 +17,9 @@ from typing import Optional
 
 # Make the repo root importable so `shared` resolves whether this is imported as a module
 # (python -m recognition.src...) or the app inserts the repo root on sys.path.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[2]   # .../groopy  (two levels above this file)
 if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+    sys.path.insert(0, str(_REPO_ROOT))            # ensure `import shared...` works from anywhere
 
 from shared.contract import (  # noqa: E402  re-exported for backward compatibility
     CONTRACT,
@@ -31,7 +31,7 @@ from shared.contract import (  # noqa: E402  re-exported for backward compatibil
     Token,
 )
 
-from .config import CONFIDENCE_GATE, DEBOUNCE_MS  # noqa: E402
+from .config import CONFIDENCE_GATE, DEBOUNCE_MS  # noqa: E402   # the two live-tuning constants
 
 __all__ = [
     "Token",
@@ -48,34 +48,34 @@ class TokenStream:
 
     def __init__(
         self,
-        gate: float = CONFIDENCE_GATE,
-        debounce_ms: int = DEBOUNCE_MS,
-        kind: str = KIND_LETTER,
+        gate: float = CONFIDENCE_GATE,      # minimum confidence to emit (default 0.80)
+        debounce_ms: int = DEBOUNCE_MS,     # minimum ms between two emits (default 500)
+        kind: str = KIND_LETTER,            # what this stream emits: "letter" (CNN) or "word" (WordStream)
     ) -> None:
         self.gate = gate
         self.debounce_ms = debounce_ms
         self.kind = kind
-        self._last_token: Optional[str] = None
-        self._last_emit_ms: float = 0.0
+        self._last_token: Optional[str] = None   # remember the last emitted label (for the no-repeat rule)
+        self._last_emit_ms: float = 0.0          # remember when we last emitted (for debounce)
 
     def update(
         self, label: str, confidence: float, sentiment: Optional[Sentiment] = None
     ) -> Optional[Token]:
-        now_ms = time.time() * 1000.0
-        if confidence < self.gate:
+        now_ms = time.time() * 1000.0                       # current time in milliseconds
+        if confidence < self.gate:                          # GATE ①: too unsure -> emit nothing
             return None
-        if now_ms - self._last_emit_ms < self.debounce_ms:
+        if now_ms - self._last_emit_ms < self.debounce_ms:  # GATE ②: debounce — fired too recently
             return None
         if label == self._last_token and (now_ms - self._last_emit_ms) < self.debounce_ms * 2:
-            return None
+            return None                                     # GATE ③: same label held steady -> one token, not a stream
 
-        self._last_token = label
-        self._last_emit_ms = now_ms
-        kind = KIND_CONTROL if label in CONTROL_TOKENS else self.kind
+        self._last_token = label                            # commit: remember this label...
+        self._last_emit_ms = now_ms                         # ...and the time we emitted it
+        kind = KIND_CONTROL if label in CONTROL_TOKENS else self.kind   # del/space/nothing -> "control"
         return Token(
-            token=label if label in CONTROL_TOKENS else label.lower(),
-            confidence=round(float(confidence), 3),
-            timestamp=int(now_ms),
+            token=label if label in CONTROL_TOKENS else label.lower(),  # controls kept as-is; letters/words lowercased
+            confidence=round(float(confidence), 3),         # tidy the confidence for the contract
+            timestamp=int(now_ms),                          # epoch ms stamp
             kind=kind,
-            sentiment=sentiment,
+            sentiment=sentiment,                            # optional sentiment metadata (usually None here)
         )

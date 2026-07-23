@@ -13,25 +13,27 @@ from tensorflow.keras import layers, models
 
 
 def _conv_block(x, filters: int):
-    x = layers.Conv2D(filters, 3, padding="same", use_bias=False)(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Activation("relu")(x)
-    x = layers.Conv2D(filters, 3, padding="same", use_bias=False)(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Activation("relu")(x)
-    x = layers.MaxPooling2D(2)(x)
+    # One VGG-style block = two conv layers then a downsample. Two 3x3 convs stacked see a
+    # 5x5 receptive field but with fewer parameters than one 5x5 conv (and more non-linearity).
+    x = layers.Conv2D(filters, 3, padding="same", use_bias=False)(x)  # 3x3 conv; no bias (BN adds its own)
+    x = layers.BatchNormalization()(x)                                # normalise activations -> faster, stabler training
+    x = layers.Activation("relu")(x)                                  # non-linearity (keeps positives, zeroes negatives)
+    x = layers.Conv2D(filters, 3, padding="same", use_bias=False)(x)  # second conv at the same width
+    x = layers.BatchNormalization()(x)                                # BN again
+    x = layers.Activation("relu")(x)                                  # ReLU again
+    x = layers.MaxPooling2D(2)(x)                                     # halve H,W -> bigger receptive field, less compute
     return x
 
 
 def build_cnn_scratch(num_classes: int, input_shape) -> tf.keras.Model:
-    inputs = layers.Input(shape=input_shape, name="input")
-    x = _conv_block(inputs, 32)
-    x = _conv_block(x, 64)
-    x = _conv_block(x, 128)
-    x = _conv_block(x, 256)          # last conv block — Grad-CAM target
-    x = layers.GlobalAveragePooling2D(name="gap")(x)
-    x = layers.Dropout(0.4)(x)
-    x = layers.Dense(256, activation="relu")(x)
-    x = layers.Dropout(0.3)(x)
-    outputs = layers.Dense(num_classes, activation="softmax", name="predictions")(x)
-    return models.Model(inputs, outputs, name="cnn_scratch")
+    inputs = layers.Input(shape=input_shape, name="input")  # (224,224,3) image tensor in [0,1]
+    x = _conv_block(inputs, 32)      # 224 -> 112, learns low-level edges/textures
+    x = _conv_block(x, 64)           # 112 -> 56, mid-level shapes
+    x = _conv_block(x, 128)          # 56 -> 28, higher-level handshape parts
+    x = _conv_block(x, 256)          # 28 -> 14, most abstract features — last conv block = Grad-CAM target
+    x = layers.GlobalAveragePooling2D(name="gap")(x)  # average each 14x14 map -> 256-vector (tiny head, clean Grad-CAM)
+    x = layers.Dropout(0.4)(x)                          # drop 40% of units -> regularisation vs overfitting
+    x = layers.Dense(256, activation="relu")(x)         # fully-connected classifier layer
+    x = layers.Dropout(0.3)(x)                          # more dropout before the output
+    outputs = layers.Dense(num_classes, activation="softmax", name="predictions")(x)  # 29-way class probabilities
+    return models.Model(inputs, outputs, name="cnn_scratch")  # wire input->output into a trainable Model
