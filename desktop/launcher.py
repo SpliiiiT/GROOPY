@@ -22,6 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from PyQt5 import QtCore, QtWidgets  # noqa: E402
 
+from desktop import theme  # noqa: E402
+
 
 def _default_model_paths() -> tuple[Optional[str], Optional[str]]:
     """(cnn_path, word_path) for whichever default models are actually present on disk —
@@ -42,39 +44,40 @@ class LauncherWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("GROOPY")
         self._children: list[QtWidgets.QMainWindow] = []  # keep refs so Qt doesn't GC them
 
-        title = QtWidgets.QLabel("GROOPY")
-        title.setStyleSheet("font-size: 24px; font-weight: 700;")
+        title = QtWidgets.QLabel("GROOPY", objectName="title")
+        title.setStyleSheet("font-size: 30px; font-weight: 800;")
         title.setAlignment(QtCore.Qt.AlignCenter)
-        subtitle = QtWidgets.QLabel("Two-way sign language communication — pick a direction:")
+        subtitle = QtWidgets.QLabel(
+            "Two-way sign-language communication — pick a direction", objectName="subtitle")
         subtitle.setAlignment(QtCore.Qt.AlignCenter)
         subtitle.setWordWrap(True)
 
-        recognize_btn = QtWidgets.QPushButton("🖐  Sign → Text  (webcam)")
-        recognize_btn.setMinimumHeight(48)
+        recognize_btn = QtWidgets.QPushButton("🖐   Sign → Text        (webcam)", objectName="cta")
+        recognize_btn.setMinimumHeight(64)
         recognize_btn.clicked.connect(self._open_recognition)
 
-        synth_btn = QtWidgets.QPushButton("\U0001F4AC  Text → Sign")
-        synth_btn.setMinimumHeight(48)
+        synth_btn = QtWidgets.QPushButton("\U0001F4AC   Text / Speech → Sign", objectName="cta")
+        synth_btn.setMinimumHeight(64)
         synth_btn.clicked.connect(self._open_synthesis)
 
-        self.status = QtWidgets.QLabel("")
-        self.status.setStyleSheet("color: #888;")
+        self.status = QtWidgets.QLabel("", objectName="status")
         self.status.setAlignment(QtCore.Qt.AlignCenter)
         self.status.setWordWrap(True)
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(title)
         layout.addWidget(subtitle)
-        layout.addSpacing(12)
+        layout.addSpacing(18)
         layout.addWidget(recognize_btn)
         layout.addWidget(synth_btn)
+        layout.addSpacing(6)
         layout.addWidget(self.status)
         layout.setSpacing(12)
-        layout.setContentsMargins(32, 32, 32, 32)
+        layout.setContentsMargins(36, 36, 36, 36)
         container = QtWidgets.QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
-        self.resize(440, 280)
+        self.resize(480, 320)
 
     def _open_recognition(self) -> None:
         from desktop.app import MainWindow
@@ -101,6 +104,7 @@ class LauncherWindow(QtWidgets.QMainWindow):
 
 def main() -> None:
     app = QtWidgets.QApplication(sys.argv)
+    theme.apply_theme(app)
     win = LauncherWindow()
     win.show()
     sys.exit(app.exec_())

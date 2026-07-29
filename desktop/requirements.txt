@@ -4,4 +4,6 @@ opencv-python>=4.8
 mediapipe==0.10.9
 tensorflow==2.17.1   # Keras 3 — keep in sync with the root requirements.txt pin
 keras==3.15.0
-pyttsx3>=2.90        # optional: offline text-to-speech
+pyttsx3>=2.90        # text-to-speech (recognition: speak the recognised sentence)
+sounddevice>=0.4     # mic capture for speech input (no PyAudio needed)
+faster-whisper>=1.0  # offline speech-to-text for the synthesis "Speak" button

@@ -6,11 +6,11 @@ Fair booth demo on a laptop with an RTX 2050.
 
 Pipeline (identical logic to the mobile app):
   webcam frame -> MediaPipe hand crop -> preprocess -> model -> confidence gate + debounce
-              -> Token -> on-screen text (+ optional TTS)
+              -> Token -> on-screen text (+ sentiment badge + optional text-to-speech)
 
 Usage:
-  python desktop/app.py --model recognition/models/mobilenetv2_desktop.keras
-  python desktop/app.py --model recognition/models/cnn_scratch.keras --speak
+  python desktop/app.py --model recognition/models/cnn_scratch.keras
+  python desktop/app.py --model recognition/models/cnn_scratch.keras --word-model recognition/models/word_transformer.keras
 """
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from PyQt5 import QtCore, QtGui, QtWidgets  # noqa: E402
 
+from desktop import theme  # noqa: E402
 from recognition.src.config import CLASS_NAMES, IMG_SIZE  # noqa: E402
 from recognition.src.preprocess import crop_hand, preprocess_for_model  # noqa: E402
 from recognition.src.token_stream import TokenStream  # noqa: E402
@@ -85,45 +86,21 @@ class MainWindow(QtWidgets.QMainWindow):
         word_model_path: str | None = None,
     ) -> None:
         super().__init__()
-        self.setWindowTitle("GROOPY — Sign → Text (desktop)")
+        self.setWindowTitle("GROOPY — Sign → Text")
         # Fingerspelling CNN is optional: run word-only if no --model is given.
         self.recognizer = Recognizer(model_path) if model_path else None
         self.stream = TokenStream(kind="letter")
         # Optional whole-word signing (Holistic + LSTM).
         self.word_signer = WordSigner(word_model_path) if word_model_path else None
-        self.speak = speak
-        self._tts = self._init_tts() if speak else None
+        self._tts = self._init_tts()               # text-to-speech (pyttsx3), None if unavailable
+        self._analyze = self._init_sentiment()      # sentiment.analyze, None if unavailable
         self.sentence: list[str] = []
+        self._last_sentiment = None
         # Live fingerspelling guess, captured to the sentence on Space (like words) rather
         # than auto-committing every debounce tick -- same capture-to-commit UX for both.
         self._last_letter: tuple[str, float] | None = None
 
-        # UI
-        self.video_label = QtWidgets.QLabel(alignment=QtCore.Qt.AlignCenter)
-        self.video_label.setMinimumSize(640, 480)
-        self.pred_label = QtWidgets.QLabel("…", alignment=QtCore.Qt.AlignCenter)
-        self.pred_label.setStyleSheet("font-size: 28px; font-weight: 600;")
-        self.text_label = QtWidgets.QLabel("", alignment=QtCore.Qt.AlignLeft)
-        self.text_label.setStyleSheet("font-size: 20px; color: #333;")
-        self.text_label.setWordWrap(True)
-
-        capture_btn = QtWidgets.QPushButton("Capture  (Space)")
-        capture_btn.clicked.connect(self._capture)
-        clear_btn = QtWidgets.QPushButton("Clear")
-        clear_btn.clicked.connect(self._clear)
-        btn_row = QtWidgets.QHBoxLayout()
-        btn_row.addWidget(capture_btn)
-        btn_row.addWidget(clear_btn)
-
-        layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(self.video_label)
-        layout.addWidget(self.pred_label)
-        layout.addWidget(QtWidgets.QLabel("Sentence:"))
-        layout.addWidget(self.text_label)
-        layout.addLayout(btn_row)
-        container = QtWidgets.QWidget()
-        container.setLayout(layout)
-        self.setCentralWidget(container)
+        self._build_ui(speak)
 
         # Camera loop
         self.cap = self._open_camera()
@@ -131,6 +108,101 @@ class MainWindow(QtWidgets.QMainWindow):
         self.timer.timeout.connect(self._tick)
         self.timer.start(30)  # ~33 fps capture; model runs each tick
 
+    # ---------------------------------------------------------------- UI
+    def _build_ui(self, speak: bool) -> None:
+        # Header
+        title = QtWidgets.QLabel("Sign → Text", objectName="title")
+        subtitle = QtWidgets.QLabel(
+            "Fingerspell letters or sign whole words to the webcam · Space to commit",
+            objectName="subtitle",
+        )
+        subtitle.setWordWrap(True)
+
+        # Video card
+        self.video_label = QtWidgets.QLabel(alignment=QtCore.Qt.AlignCenter)
+        self.video_label.setMinimumSize(640, 400)
+        vwrap = QtWidgets.QVBoxLayout()
+        vwrap.setContentsMargins(10, 10, 10, 10)
+        vwrap.addWidget(self.video_label)
+        video_card = QtWidgets.QFrame(objectName="card")
+        video_card.setLayout(vwrap)
+
+        # Live prediction
+        self.pred_label = QtWidgets.QLabel("…", alignment=QtCore.Qt.AlignCenter, objectName="pred")
+
+        # Sentence card (text + sentiment badge)
+        sec = QtWidgets.QLabel("SENTENCE", objectName="section")
+        self.badge = QtWidgets.QLabel("")
+        self.badge.setVisible(False)
+        head_row = QtWidgets.QHBoxLayout()
+        head_row.addWidget(sec)
+        head_row.addStretch(1)
+        head_row.addWidget(self.badge)
+        self.text_label = QtWidgets.QLabel("", objectName="sentence", alignment=QtCore.Qt.AlignLeft)
+        self.text_label.setWordWrap(True)
+        self.text_label.setMinimumHeight(52)
+        scard = QtWidgets.QVBoxLayout()
+        scard.setContentsMargins(16, 12, 16, 14)
+        scard.addLayout(head_row)
+        scard.addWidget(self.text_label)
+        sentence_card = QtWidgets.QFrame(objectName="card")
+        sentence_card.setLayout(scard)
+
+        # Buttons
+        capture_btn = QtWidgets.QPushButton("Capture  (Space)")
+        capture_btn.clicked.connect(self._capture)
+        space_btn = QtWidgets.QPushButton("Space", objectName="ghost")
+        space_btn.clicked.connect(self._add_space)
+        back_btn = QtWidgets.QPushButton("⌫  Delete", objectName="ghost")
+        back_btn.clicked.connect(self._backspace)
+        speak_btn = QtWidgets.QPushButton("🔊  Speak", objectName="ghost")
+        speak_btn.clicked.connect(self._speak_sentence)
+        speak_btn.setEnabled(self._tts is not None)
+        clear_btn = QtWidgets.QPushButton("Clear", objectName="ghost")
+        clear_btn.clicked.connect(self._clear)
+
+        self.autospeak = QtWidgets.QCheckBox("Speak on capture")
+        self.autospeak.setChecked(bool(speak) and self._tts is not None)
+        self.autospeak.setEnabled(self._tts is not None)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        for b in (capture_btn, space_btn, back_btn, speak_btn, clear_btn):
+            btn_row.addWidget(b)
+        btn_row.addStretch(1)
+        btn_row.addWidget(self.autospeak)
+
+        self.status = QtWidgets.QLabel(self._status_default(), objectName="status")
+        self.status.setWordWrap(True)
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.setContentsMargins(20, 18, 20, 16)
+        layout.setSpacing(12)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+        layout.addWidget(video_card, stretch=1)
+        layout.addWidget(self.pred_label)
+        layout.addWidget(sentence_card)
+        layout.addLayout(btn_row)
+        layout.addWidget(self.status)
+        container = QtWidgets.QWidget()
+        container.setLayout(layout)
+        self.setCentralWidget(container)
+        self.resize(760, 900)
+
+    def _status_default(self) -> str:
+        bits = []
+        bits.append("fingerspelling" if self.recognizer else None)
+        bits.append("words" if self.word_signer else None)
+        modes = " + ".join(b for b in bits if b) or "no model"
+        extras = []
+        if self._tts is None:
+            extras.append("TTS off (pip install pyttsx3)")
+        if self._analyze is None:
+            extras.append("sentiment off")
+        tail = ("  ·  " + ", ".join(extras)) if extras else ""
+        return f"Ready · {modes}{tail}"
+
+    # ---------------------------------------------------------------- init helpers
     def _open_camera(self):
         """Open a working webcam. On Windows the default MSMF backend often returns no
         frames — DirectShow (CAP_DSHOW) is far more reliable — so try it first, and try a
@@ -158,9 +230,58 @@ class MainWindow(QtWidgets.QMainWindow):
             print("pyttsx3 not available — running without speech.")
             return None
 
+    def _init_sentiment(self):
+        """The shared sentiment analyzer (zero-dependency lexicon by default). None if missing."""
+        try:
+            from sentiment import analyze
+
+            return analyze
+        except Exception:
+            print("sentiment module not available — running without sentiment.")
+            return None
+
+    # ---------------------------------------------------------------- speech + sentiment
+    def _say(self, text: str) -> None:
+        if self._tts and text.strip():
+            try:
+                self._tts.say(text)
+                self._tts.runAndWait()
+            except Exception:
+                pass
+
+    def _speak_sentence(self) -> None:
+        text = "".join(self.sentence).strip()
+        if not text:
+            self.status.setText("Nothing to speak yet.")
+            return
+        self.status.setText("Speaking…")
+        QtWidgets.QApplication.processEvents()
+        self._say(text)
+        self.status.setText(self._status_default())
+
+    def _update_sentiment(self) -> None:
+        """Recompute sentiment on the whole sentence and refresh the badge."""
+        if self._analyze is None:
+            return
+        text = "".join(self.sentence).strip()
+        self._last_sentiment = self._analyze(text) if text else None
+        theme.set_sentiment_badge(self.badge, self._last_sentiment)
+
+    # ---------------------------------------------------------------- editing
     def _clear(self) -> None:
         self.sentence = []
         self.text_label.setText("")
+        self._update_sentiment()
+
+    def _add_space(self) -> None:
+        self.sentence.append(" ")
+        self.text_label.setText("".join(self.sentence))
+
+    def _backspace(self) -> None:
+        if self.sentence:
+            self.sentence.pop()
+            self.text_label.setText("".join(self.sentence))
+            self._update_sentiment()
 
     def _capture(self) -> None:
         """Commit whichever is currently live: a ready word sign takes priority (it's the
@@ -205,9 +326,12 @@ class MainWindow(QtWidgets.QMainWindow):
     def keyPressEvent(self, event) -> None:
         if event.key() == QtCore.Qt.Key_Space:
             self._capture()
+        elif event.key() in (QtCore.Qt.Key_Backspace, QtCore.Qt.Key_Delete):
+            self._backspace()
         else:
             super().keyPressEvent(event)
 
+    # ---------------------------------------------------------------- camera loop
     def _tick(self) -> None:
         ok, frame = self.cap.read()
         if not ok:
@@ -222,7 +346,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.recognizer is not None:
             label, conf = self.recognizer.predict(frame)
             if label == NO_HAND:
-                self.pred_label.setText("no hand detected — show a letter")
+                self.pred_label.setText("show a letter ✋")
                 self._last_letter = None
             else:
                 self.pred_label.setText(f"{label}   ({conf:.0%})   — Space to add")
@@ -241,7 +365,7 @@ class MainWindow(QtWidgets.QMainWindow):
             elif self.recognizer is None:
                 self.pred_label.setText(
                     "… buffering (hold a sign ~1s)" if not ws.ready
-                    else "no hands detected — sign a word"
+                    else "sign a word ✋"
                 )
 
         # render frame
@@ -254,6 +378,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _apply_token(self, token) -> None:
         # Contract-aware handling of controls, letters, and whole words.
+        spoke = None
         if token.token == "space":
             self.sentence.append(" ")
         elif token.token == "del":
@@ -264,16 +389,21 @@ class MainWindow(QtWidgets.QMainWindow):
         elif token.kind == "word":
             # Whole-word signs read as words, so add spacing around them.
             self.sentence.append((" " if self.sentence else "") + token.token + " ")
-            if self._tts:
-                self._tts.say(token.token)
-                self._tts.runAndWait()
+            spoke = token.token
         else:
             self.sentence.append(token.token)
-            if self._tts:
-                self._tts.say(token.token)
-                self._tts.runAndWait()
+            spoke = token.token
         self.text_label.setText("".join(self.sentence))
-        # token.to_dict() is exactly what Track B would receive.
+
+        # Sentiment on the running sentence (shown as a badge; also attach to the token so
+        # token.to_dict() — exactly what Track B would receive — carries it).
+        self._update_sentiment()
+        if self._last_sentiment is not None:
+            token.sentiment = self._last_sentiment
+
+        # Speak the newly committed token if "Speak on capture" is on.
+        if spoke and self.autospeak.isChecked():
+            self._say(spoke)
 
     def closeEvent(self, event) -> None:
         self.cap.release()
@@ -283,17 +413,18 @@ class MainWindow(QtWidgets.QMainWindow):
 def main() -> None:
     parser = argparse.ArgumentParser(description="GROOPY desktop live demo.")
     parser.add_argument("--model", default=None, help="fingerspelling .keras model (optional)")
-    parser.add_argument("--speak", action="store_true", help="enable text-to-speech")
+    parser.add_argument("--speak", action="store_true", help="speak each committed token by default")
     parser.add_argument(
         "--word-model",
         default=None,
-        help="lstm_word.keras to recognise whole-word signs (optional)",
+        help="word .keras model to recognise whole-word signs (optional)",
     )
     args = parser.parse_args()
     if not args.model and not args.word_model:
         parser.error("give at least one of --model (fingerspelling) or --word-model (words).")
 
     app = QtWidgets.QApplication(sys.argv)
+    theme.apply_theme(app)
     win = MainWindow(args.model, speak=args.speak, word_model_path=args.word_model)
     win.show()
     sys.exit(app.exec_())
