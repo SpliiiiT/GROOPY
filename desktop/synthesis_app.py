@@ -18,6 +18,8 @@ from pathlib import Path
 # Make the repo importable when run as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import desktop._preload  # noqa: E402,F401  MUST precede PyQt5 (torch/OpenMP DLL shims)
+
 from PyQt5 import QtCore, QtWidgets  # noqa: E402
 
 from desktop import theme  # noqa: E402

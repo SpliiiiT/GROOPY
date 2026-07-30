@@ -103,12 +103,15 @@ def record_and_transcribe(seconds: float = 4.0, model_size: str = "base") -> str
     Preferred path: sounddevice capture -> faster-whisper (offline, no PyAudio). Falls back to
     the SpeechRecognition mic path if sounddevice isn't available.
     """
+    # 1) capture audio. sounddevice preferred (no PyAudio); fall back to the legacy mic path.
     try:
         import sounddevice  # noqa: F401  (probe availability before recording)
-        path = _record_wav_sounddevice(seconds)
-        return transcribe(path, model_size)       # whisper (or SpeechRecognition file fallback)
     except Exception:
-        return listen_mic(seconds)                # last resort: SpeechRecognition mic path
+        return listen_mic(seconds)
+    path = _record_wav_sounddevice(seconds)
+    # 2) transcribe. Let transcribe() raise its own clear error if no ASR backend is available,
+    #    rather than masking it behind the misleading "install sounddevice" message.
+    return transcribe(path, model_size)
 
 
 def listen_mic(seconds: float = 4.0) -> str:
