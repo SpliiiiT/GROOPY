@@ -98,20 +98,57 @@ def _record_wav_sounddevice(seconds: float, fs: int = 16000) -> str:
 
 
 def record_and_transcribe(seconds: float = 4.0, model_size: str = "base") -> str:
-    """Capture `seconds` from the mic and return the transcription.
+    """Capture `seconds` from the mic and return the transcription — IN THIS PROCESS.
 
-    Preferred path: sounddevice capture -> faster-whisper (offline, no PyAudio). Falls back to
-    the SpeechRecognition mic path if sounddevice isn't available.
+    sounddevice capture -> faster-whisper (offline, no PyAudio). This loads torch/ctranslate2,
+    which is fatal alongside Qt in the packaged app — so the GUI calls
+    record_and_transcribe_subprocess() instead. Kept for CLI / the worker process itself.
     """
-    # 1) capture audio. sounddevice preferred (no PyAudio); fall back to the legacy mic path.
     try:
         import sounddevice  # noqa: F401  (probe availability before recording)
     except Exception:
         return listen_mic(seconds)
     path = _record_wav_sounddevice(seconds)
-    # 2) transcribe. Let transcribe() raise its own clear error if no ASR backend is available,
-    #    rather than masking it behind the misleading "install sounddevice" message.
     return transcribe(path, model_size)
+
+
+def record_and_transcribe_subprocess(seconds: float = 4.0, timeout: float = 180.0) -> str:
+    """Record + transcribe in a SEPARATE process, returning the text (or "").
+
+    This is what the GUI calls. The child process loads sounddevice + faster-whisper (torch,
+    ctranslate2) in a clean, Qt-free environment — so those native libraries load correctly AND
+    a crash there can never close the GUI. The child writes the transcript to a temp .txt file
+    (windowed apps may have no usable stdout), which we read back.
+
+    Frozen app: re-invokes the packaged exe as `GROOPY.exe --asr-worker <out> <seconds>`
+    (handled in launcher.py before Qt is imported). Source: `python -m synthesis.src.asr_worker`.
+    """
+    import os
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path
+
+    out_path = tempfile.NamedTemporaryFile(suffix=".asr.txt", delete=False).name
+    if getattr(sys, "frozen", False):
+        cmd = [sys.executable, "--asr-worker", out_path, str(seconds)]
+        cwd = None
+    else:
+        cmd = [sys.executable, "-m", "synthesis.src.asr_worker", out_path, str(seconds)]
+        cwd = str(Path(__file__).resolve().parents[2])   # repo root, so `-m` resolves
+    # CREATE_NO_WINDOW so the child never flashes a console window on Windows.
+    creationflags = 0x08000000 if os.name == "nt" else 0
+    try:
+        subprocess.run(cmd, timeout=timeout, cwd=cwd, creationflags=creationflags,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return Path(out_path).read_text(encoding="utf-8").strip()
+    except Exception:
+        return ""
+    finally:
+        try:
+            os.unlink(out_path)
+        except Exception:
+            pass
 
 
 def listen_mic(seconds: float = 4.0) -> str:

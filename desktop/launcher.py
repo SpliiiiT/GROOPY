@@ -20,7 +20,16 @@ from typing import Optional
 # in that case, so this insert is a harmless no-op there).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import desktop._preload  # noqa: E402,F401  MUST precede PyQt5 (torch/OpenMP DLL shims)
+import desktop._preload  # noqa: E402,F401  MUST precede PyQt5 (OpenMP guard)
+
+# ASR worker mode (frozen .exe): the GUI re-invokes itself as `GROOPY.exe --asr-worker <out>
+# <seconds>` to record + transcribe speech in THIS clean process. Must run and exit BEFORE any
+# PyQt5 import, so the worker never loads Qt (which is what makes faster-whisper crash).
+if len(sys.argv) >= 3 and sys.argv[1] == "--asr-worker":
+    from synthesis.src.asr_worker import run
+
+    run(sys.argv[2], float(sys.argv[3]) if len(sys.argv) > 3 else 4.0)
+    sys.exit(0)
 
 from PyQt5 import QtCore, QtWidgets  # noqa: E402
 

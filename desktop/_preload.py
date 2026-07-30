@@ -1,30 +1,16 @@
-"""Import-order + OpenMP shims — MUST be imported before PyQt5 in every desktop entry point.
+"""Process-wide shims — imported before PyQt5 in the desktop entry points.
 
-Two native-library landmines this defuses:
+The GUI process deliberately does NOT load faster-whisper / ctranslate2 / torch: those native
+libraries crash when loaded alongside Qt in the packaged .exe (torch c10.dll WinError 1114, and
+a duplicate-OpenMP abort with TensorFlow). Speech-to-text therefore runs in a SEPARATE worker
+process (see synthesis/src/asr_worker.py and launcher.py's --asr-worker branch), where there is
+no Qt, so Whisper loads cleanly and a crash there can never take down the GUI.
 
-1. torch-after-Qt DLL crash. faster-whisper -> ctranslate2 does `import torch`, and torch's
-   c10.dll fails to initialise (WinError 1114) if Qt was loaded first. Importing faster-whisper
-   HERE — before any PyQt5 import — loads torch's DLLs first, after which Qt loads cleanly.
-   (In the packaged .exe torch is excluded, so this import is a harmless no-op there.)
-
-2. Duplicate OpenMP abort. TensorFlow and ctranslate2 each ship their own OpenMP runtime; on
-   Windows loading both aborts the process ("OMP: Error #15 ... libiomp5md.dll already
-   initialized"), which looks like the app just closing. KMP_DUPLICATE_LIB_OK lets them coexist.
-
-Keep this import at the very top of launcher.py / synthesis_app.py (before `from PyQt5 ...`).
+All that remains here is the OpenMP guard (harmless, and covers TensorFlow + any stray load).
 """
 from __future__ import annotations
 
 import os
 
-# Allow TensorFlow's and ctranslate2's OpenMP runtimes to coexist instead of aborting.
+# Let multiple OpenMP runtimes coexist instead of aborting the process on Windows.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-# Quieter, and avoids some thread-oversubscription stalls when both libs are loaded.
-os.environ.setdefault("OMP_NUM_THREADS", os.environ.get("OMP_NUM_THREADS", "4"))
-
-try:
-    # Load ctranslate2/torch DLLs before Qt. Best-effort: if faster-whisper isn't installed
-    # (or torch is excluded, as in the .exe), just skip — the mic path degrades gracefully.
-    import faster_whisper  # noqa: F401
-except Exception:
-    pass

@@ -133,11 +133,12 @@ class SynthWindow(QtWidgets.QMainWindow):
         self.status.setText("🎙  Listening… speak now (~4s)")
         QtWidgets.QApplication.processEvents()
         try:
-            from synthesis.src.asr import record_and_transcribe
+            # Runs in a SEPARATE process (no Qt) so whisper/torch can't crash the GUI.
+            from synthesis.src.asr import record_and_transcribe_subprocess
 
-            text = record_and_transcribe(seconds=4.0)
-        except Exception as e:  # missing backend / mic
-            self.status.setText(f"Speech failed: {e}")
+            text = record_and_transcribe_subprocess(seconds=4.0)
+        except Exception as e:  # spawning failed, etc. — never crash the GUI
+            self.status.setText(f"Speech unavailable: {e}")
             self.speak_btn.setEnabled(True)
             return
         self.speak_btn.setEnabled(True)
