@@ -24,6 +24,24 @@ _MISSING = (                                     # shown if the user calls ASR w
 _WHISPER = None                                  # cached whisper model (built once)
 
 
+def _whisper_source(model_size: str = "base") -> str:
+    """Where to load the Whisper model from.
+
+    Packaged app: a bundled model dir (models/whisper-<size>) ships inside the build (see
+    packaging/groopy.spec), so mic transcription works OFFLINE. Dev/source: fall back to the
+    size NAME, which faster-whisper downloads/caches from HuggingFace on first use.
+    """
+    try:
+        from shared.paths import app_root
+
+        bundled = app_root() / "models" / f"whisper-{model_size}"   # _MEIPASS/... when frozen
+        if (bundled / "model.bin").is_file():
+            return str(bundled)
+    except Exception:
+        pass
+    return model_size
+
+
 def _get_whisper(model_size: str = "base"):
     """Lazily construct a cached faster-whisper model, or return None if unavailable."""
     global _WHISPER
@@ -33,7 +51,8 @@ def _get_whisper(model_size: str = "base"):
         from faster_whisper import WhisperModel   # optional dep
     except Exception:
         return None                               # not installed -> signal "no whisper"
-    _WHISPER = WhisperModel(model_size, device="cpu", compute_type="int8")   # int8 = quantised, fast on CPU
+    # int8 = quantised, fast on CPU. Prefer a bundled model dir (offline) over a name (downloads).
+    _WHISPER = WhisperModel(_whisper_source(model_size), device="cpu", compute_type="int8")
     return _WHISPER
 
 

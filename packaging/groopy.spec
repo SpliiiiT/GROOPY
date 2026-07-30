@@ -28,6 +28,23 @@ datas = [
     # crashes the first time recognition tries to process a frame).
 ] + collect_data_files("mediapipe")
 
+# Bundle the faster-whisper "base" model so the synthesis mic (speech-to-text) works OFFLINE in
+# the packaged app -- otherwise faster-whisper downloads ~148MB from HuggingFace on first use,
+# which fails at a booth with no internet. asr._whisper_source() loads from models/whisper-base
+# inside the bundle when present. Needs internet AT BUILD TIME (snapshot_download caches it).
+try:
+    from huggingface_hub import snapshot_download
+
+    _whisper_dir = Path(snapshot_download("Systran/faster-whisper-base"))
+    datas += [
+        (str(p), "models/whisper-base")
+        for p in _whisper_dir.iterdir()
+        if p.is_file()
+    ]
+    print(f"[groopy.spec] bundling faster-whisper base model from {_whisper_dir}")
+except Exception as e:  # offline build / hub error -> app still builds, mic just needs internet once
+    print(f"[groopy.spec] WARNING: whisper model NOT bundled ({e}); mic will download it on first use")
+
 a = Analysis(
     [str(REPO_ROOT / "desktop" / "launcher.py")],
     pathex=[str(REPO_ROOT)],
